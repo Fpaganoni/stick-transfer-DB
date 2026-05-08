@@ -139,39 +139,31 @@ export class StoriesService {
 
   // Mark a story as viewed by a user
   async viewStory(storyId: string, userId: string) {
-    // Check if already viewed
-    const existingView = await this.prisma.storyView.findUnique({
-      where: {
-        storyId_userId: {
-          storyId,
-          userId,
+    const includeUser = {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          username: true,
+          avatar: true,
         },
       },
-    });
+    };
 
-    if (existingView) {
-      return existingView;
+    try {
+      return await this.prisma.storyView.create({
+        data: { storyId, userId },
+        include: includeUser,
+      });
+    } catch (error) {
+      if (error.code === 'P2002') {
+        return this.prisma.storyView.findUnique({
+          where: { storyId_userId: { storyId, userId } },
+          include: includeUser,
+        });
+      }
+      throw error;
     }
-
-    // Create new view
-    const view = await this.prisma.storyView.create({
-      data: {
-        storyId,
-        userId,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            username: true,
-            avatar: true,
-          },
-        },
-      },
-    });
-
-    return view;
   }
 
   // Get viewers of a story

@@ -5,6 +5,7 @@ type User {
   username: String
   avatar: String
   coverImage: String
+  coverImagePosition: String
   bio: String
   position: String
   role: String!
@@ -30,6 +31,7 @@ type Club {
   name: String!
   logo: String
   coverImage: String
+  coverImagePosition: String
   description: String
   bio: String
   city: String!
@@ -435,6 +437,7 @@ type Mutation {
     bio: String
     avatar: String
     coverImage: String
+    coverImagePosition: String
     position: String
     country: String
     city: String
@@ -469,7 +472,26 @@ type Mutation {
     invitedBy: String!
   ): ClubMember!
   acceptMembership(membershipId: String!): ClubMember!
+  updateClub(
+    id: ID!
+    name: String
+    description: String
+    bio: String
+    coverImagePosition: String
+    league: String
+    foundedYear: Int
+    email: String
+    phone: String
+    website: String
+    instagram: String
+    twitter: String
+    facebook: String
+    tiktok: String
+    benefits: [String!]
+  ): Club!
   requestClubVerification(clubId: ID!, documentUrl: String!): Club!
+  uploadClubLogo(clubId: ID!, base64: String!): Boolean!
+  uploadClubCoverImage(clubId: ID!, base64: String!): Boolean!
 
   # Posts
   createPost(

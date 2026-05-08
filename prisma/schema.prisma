@@ -15,8 +15,9 @@ model User {
   password          String?
   name              String // REQUIRED
   username          String?      @unique
-  avatar            String? // profile picture URL
-  coverImage        String? // cover/banner image
+  avatar                String? // profile picture URL
+  coverImage            String? // cover/banner image
+  coverImagePosition    String? @default("50%") // vertical focal point for cover image
   bio               String? // merged from Profile
   position          String? // playing position
   role              Role         @default(PLAYER)
@@ -86,8 +87,9 @@ model User {
 model Club {
   id          String   @id @default(uuid())
   name        String   @unique
-  logo        String? // club logo/badge URL
-  coverImage  String? // club cover image URL
+  logo                String? // club logo/badge URL
+  coverImage          String? // club cover image URL
+  coverImagePosition  String? @default("50%") // vertical focal point for cover image
   description String? // club description/about
   bio         String? // short club bio
   city        String // REQUIRED - club location city

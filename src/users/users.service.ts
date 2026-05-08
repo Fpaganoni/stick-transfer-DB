@@ -92,6 +92,7 @@ export class UsersService {
       bio?: string;
       avatar?: string;
       coverImage?: string;
+      coverImagePosition?: string;
       position?: string;
       country?: string;
       city?: string;

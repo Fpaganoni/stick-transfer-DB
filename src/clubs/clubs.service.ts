@@ -131,6 +131,44 @@ export class ClubsService {
     });
   }
 
+  async updateClub(
+    id: string,
+    data: {
+      name?: string;
+      description?: string;
+      bio?: string;
+      coverImagePosition?: string;
+      league?: string;
+      foundedYear?: number;
+      email?: string;
+      phone?: string;
+      website?: string;
+      instagram?: string;
+      twitter?: string;
+      facebook?: string;
+      tiktok?: string;
+      benefits?: string[];
+    },
+  ) {
+    return this.prisma.club.update({
+      where: { id },
+      data,
+      include: { admin: true },
+    });
+  }
+
+  async setLogo(clubId: string, url: string) {
+    const club = await this.prisma.club.findUnique({ where: { id: clubId } });
+    if (!club) throw new BadRequestException(`Club ${clubId} not found`);
+    await this.prisma.club.update({ where: { id: clubId }, data: { logo: url } });
+  }
+
+  async setCoverImage(clubId: string, url: string) {
+    const club = await this.prisma.club.findUnique({ where: { id: clubId } });
+    if (!club) throw new BadRequestException(`Club ${clubId} not found`);
+    await this.prisma.club.update({ where: { id: clubId }, data: { coverImage: url } });
+  }
+
   async requestVerification(clubId: string, documentUrl: string) {
     const club = await this.prisma.club.findUnique({ where: { id: clubId } });
     if (!club) throw new BadRequestException(`Club ${clubId} not found`);
