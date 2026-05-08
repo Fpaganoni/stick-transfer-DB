@@ -1,5 +1,5 @@
--- CreateEnum for VerificationStatus if it doesn't exist
-CREATE TYPE "VerificationStatus" AS ENUM ('UNVERIFIED', 'PENDING', 'VERIFIED', 'REJECTED');
+-- CreateEnum for VerificationStatus removed because it was already created in a previous migration
+-- CREATE TYPE "VerificationStatus" AS ENUM ('UNVERIFIED', 'PENDING', 'VERIFIED', 'REJECTED');
 
 -- AlterTable: Change verificationStatus from TEXT to VerificationStatus ENUM
 ALTER TABLE "Club" ALTER COLUMN "verificationStatus" DROP DEFAULT;
