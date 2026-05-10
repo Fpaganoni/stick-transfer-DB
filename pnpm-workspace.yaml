@@ -1,0 +1,9 @@
+allowBuilds:
+  '@apollo/protobufjs': false
+  '@nestjs/core': false
+  '@prisma/client': false
+  '@prisma/engines': false
+  bcrypt: false
+  core-js: false
+  prisma: false
+  unrs-resolver: false
