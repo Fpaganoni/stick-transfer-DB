@@ -61,4 +61,25 @@ export class NotificationsService {
     });
     return true;
   }
+
+  async removeNotification(id: string, userId: string) {
+    const notification = await this.prisma.notification.findUnique({
+      where: { id },
+      select: { recipientId: true },
+    });
+
+    if (!notification || notification.recipientId !== userId) {
+      return false;
+    }
+
+    await this.prisma.notification.delete({ where: { id } });
+    return true;
+  }
+
+  async clearAllNotifications(userId: string) {
+    await this.prisma.notification.deleteMany({
+      where: { recipientId: userId },
+    });
+    return true;
+  }
 }
