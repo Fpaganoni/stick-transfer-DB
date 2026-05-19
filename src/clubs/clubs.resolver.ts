@@ -1,7 +1,7 @@
 import { Resolver, Query, Mutation, Args, ID } from "@nestjs/graphql";
 import { ClubsService } from "./clubs.service";
 import { NotificationsGateway } from "../notifications/notifications.gateway";
-import { CloudinaryService } from "../integrations/cloudinary.service";
+import { CloudinaryService } from "../uploads/cloudinary.service";
 
 @Resolver("Club")
 export class ClubsResolver {

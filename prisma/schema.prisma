@@ -8,53 +8,47 @@ datasource db {
 }
 
 model User {
-  id                String       @id @default(uuid())
-  email             String       @unique
+  id                    String       @id @default(uuid())
+  email                 String       @unique
   /// Nullable: OAuth users (Google, Apple) do not have a password.
   /// SECURITY: Always check authProvider before assuming a password exists.
-  password          String?
-  name              String // REQUIRED
-  username          String?      @unique
-  avatar                String? // profile picture URL
-  coverImage            String? // cover/banner image
-  coverImagePosition    String? @default("50%") // vertical focal point for cover image
-  bio               String? // merged from Profile
-  position          String? // playing position
-  role              Role         @default(PLAYER)
-  country           String? // country code or emoji
-  city              String? // city of residence
-  clubId            String? // current club affiliation
-  yearsOfExperience Int? // years playing/coaching
-  cvUrl             String? // CV/Resume PDF URL (only for PLAYER and COACH roles)
-  multimedia        String[] // NEW - Array of YouTube URLs
-  isVerified        Boolean      @default(false)
-  isEmailVerified   Boolean      @default(false) // Email verification status
-  isActive          Boolean      @default(true) // account active status
+  password              String?
+  name                  String
+  username              String?      @unique
+  avatar                String?
+  coverImage            String?
+  coverImagePosition    String?      @default("50%")
+  bio                   String?
+  position              String?
+  role                  Role         @default(PLAYER)
+  country               String?
+  city                  String?
+  clubId                String?
+  yearsOfExperience     Int?
+  cvUrl                 String?
+  multimedia            String[]
+  isVerified            Boolean      @default(false)
+  isEmailVerified       Boolean      @default(false)
+  isActive              Boolean      @default(true)
   /// The OAuth provider used to authenticate this user.
   /// SECURITY: Used to prevent cross-provider account collisions.
-  authProvider      AuthProvider @default(EMAIL)
+  authProvider          AuthProvider @default(EMAIL)
   /// The unique user ID from the OAuth provider (Google sub, Apple sub).
   /// SECURITY: Apple only sends email on the FIRST login; socialId is the
   /// only reliable identifier for subsequent Apple logins.
-  socialId          String? // provider-specific unique ID
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
+  socialId              String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
 
   // Relations
   club            Club?        @relation("ClubMembers", fields: [clubId], references: [id])
-  adminClub       Club?        @relation("ClubAdmin") // The club this user administers (CLUB_ADMIN role)
+  adminClub       Club?        @relation("ClubAdmin")
   clubs           ClubMember[] @relation("UserClubMemberships")
   invitationsSent ClubMember[] @relation("InvitedBy")
 
-  // Social features
-  posts         Post[]                    @relation("UserPosts")
-  comments      Comment[]                 @relation("CommentAuthor")
-  commentLikes  CommentLike[]             @relation("UserCommentLikes")
-  likes         Like[]
+  // Messaging
   conversations ConversationParticipant[] @relation("UserConversations")
   messagesSent  Message[]                 @relation("MessagesSent")
-
-  // Follow system (relations managed in Follow model)
 
   // Job applications
   jobApplications JobApplication[] @relation("UserJobApplications")
@@ -62,11 +56,6 @@ model User {
   // Career & Stats
   trajectories Trajectory[] @relation("UserTrajectories")
   statistics   Statistics[] @relation("UserStatistics")
-
-  // Social engagement
-  shares     Share[]     @relation("UserShares")
-  stories    Story[]     @relation("UserStories")
-  storyViews StoryView[] @relation("UserStoryViews")
 
   // Email verification
   emailVerificationTokens EmailVerificationToken[] @relation("UserVerificationTokens")
@@ -79,52 +68,47 @@ model User {
   @@index([username])
   @@index([clubId])
   @@index([role, isActive])
-  /// Allows fast lookup by OAuth provider + provider user ID.
   @@index([authProvider, socialId])
-  
-  // Talent Search Indexes (Critical for Performance)
   @@index([role, position])
   @@index([country, city])
   @@index([role, country, city, position])
 }
 
 model Club {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  logo                String? // club logo/badge URL
-  coverImage          String? // club cover image URL
-  coverImagePosition  String? @default("50%") // vertical focal point for cover image
-  description String? // club description/about
-  bio         String? // short club bio
-  city        String // REQUIRED - club location city
-  country     String // REQUIRED - country code or emoji
-  league      String? // league/division
-  foundedYear Int? // year club was founded
-  email       String? // club contact email
-  phone       String? // club contact phone
-  website     String? // club official website
-  instagram   String? // instagram handle or URL
-  twitter     String? // twitter/X handle or URL
-  facebook    String? // facebook page URL
-  tiktok      String? // tiktok handle or URL
+  id                 String             @id @default(uuid())
+  name               String             @unique
+  logo               String?
+  coverImage         String?
+  coverImagePosition String?            @default("50%")
+  description        String?
+  bio                String?
+  city               String
+  country            String
+  league             String?
+  foundedYear        Int?
+  email              String?
+  phone              String?
+  website            String?
+  instagram          String?
+  twitter            String?
+  facebook           String?
+  tiktok             String?
   isVerified         Boolean            @default(false)
   verificationStatus VerificationStatus @default(UNVERIFIED)
-  verificationDoc    String?            // URL del documento subido para verificar
-  benefits    String[] @default([]) // array of strings for club benefits/perks
+  verificationDoc    String?
+  benefits           String[]           @default([])
 
   /// The User (with role CLUB_ADMIN) who manages this club.
-  /// A club can exist without an admin (e.g. seeded clubs), hence nullable.
-  adminId     String?  @unique
-  admin       User?    @relation("ClubAdmin", fields: [adminId], references: [id], onDelete: SetNull)
+  adminId   String?  @unique
+  admin     User?    @relation("ClubAdmin", fields: [adminId], references: [id], onDelete: SetNull)
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
   members          User[]           @relation("ClubMembers")
   clubMembers      ClubMember[]     @relation("ClubMemberships")
   teams            Team[]
-  posts            Post[]           @relation("ClubPosts")
   jobOpportunities JobOpportunity[]
   trajectories     Trajectory[]     @relation("ClubTrajectories")
   statistics       Statistics[]     @relation("ClubStatistics")
@@ -164,115 +148,6 @@ model ClubMember {
   @@unique([clubId, userId])
   @@index([userId, status])
   @@index([clubId, status])
-}
-
-// Social Network Models
-
-model Post {
-  id         String     @id @default(uuid())
-  content    String     @db.Text
-  imageUrl   String? // Single featured image
-  images     String[] // Array of image URLs for carousel
-  videoUrl   String? // Single video URL
-  userId     String // Direct user FK (required)
-  clubId     String? // Optional club FK
-  isClubPost Boolean    @default(false) // True if posted by club
-  visibility Visibility @default(PUBLIC) // Post visibility
-  isPinned   Boolean    @default(false) // Pinned to top
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-
-  user          User           @relation("UserPosts", fields: [userId], references: [id], onDelete: Cascade)
-  club          Club?          @relation("ClubPosts", fields: [clubId], references: [id], onDelete: Cascade)
-  comments      Comment[]
-  likes         Like[]
-  shares        Share[]        @relation("PostShares")
-  notifications Notification[]
-
-  @@index([userId, createdAt])
-  @@index([clubId, createdAt])
-  @@index([visibility, createdAt])
-  @@index([isPinned, createdAt])
-  @@index([createdAt])
-}
-
-enum Visibility {
-  PUBLIC
-  FRIENDS
-  PRIVATE
-}
-
-model Comment {
-  id              String   @id @default(uuid())
-  content         String   @db.Text
-  postId          String
-  userId          String // Renamed from authorId for consistency
-  parentCommentId String? // NEW - For nested replies
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  post          Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
-  user          User          @relation("CommentAuthor", fields: [userId], references: [id], onDelete: Cascade)
-  parentComment Comment?      @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
-  replies       Comment[]     @relation("CommentReplies")
-  likes         CommentLike[]
-
-  @@index([postId])
-  @@index([userId])
-  @@index([parentCommentId])
-}
-
-model CommentLike {
-  id        String   @id @default(uuid())
-  commentId String
-  userId    String
-  createdAt DateTime @default(now())
-
-  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
-  user    User    @relation("UserCommentLikes", fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([commentId, userId])
-  @@index([commentId])
-  @@index([userId])
-}
-
-model Like {
-  id        String   @id @default(uuid())
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-  postId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
-  createdAt DateTime @default(now())
-
-  @@unique([postId, userId])
-  @@index([postId])
-  @@index([userId])
-}
-
-model Follow {
-  id            String       @id @default(uuid())
-  followerType  FollowerType
-  followerId    String
-  followingType FollowerType
-  followingId   String
-  createdAt     DateTime     @default(now())
-
-  @@unique([followerType, followerId, followingType, followingId])
-  @@index([followerType, followerId])
-  @@index([followingType, followingId])
-}
-
-model ProfileLike {
-  id          String       @id @default(uuid())
-  likerType   FollowerType // USER or CLUB who gives the like
-  likerId     String
-  profileType FollowerType // USER or CLUB profile being liked
-  profileId   String
-  createdAt   DateTime     @default(now())
-
-  @@unique([likerType, likerId, profileType, profileId])
-  @@index([likerType, likerId])
-  @@index([profileType, profileId])
 }
 
 model JobOpportunity {
@@ -321,26 +196,18 @@ model JobApplication {
   @@index([status])
 }
 
-enum ApplicationStatus {
-  PENDING
-  UNDER_REVIEW
-  ACCEPTED
-  REJECTED
-  WITHDRAWN
-}
-
 model Trajectory {
   id           String    @id @default(uuid())
   userId       String
   clubId       String?
-  title        String // "Player", "Coach", "Assistant Coach"
-  organization String // Club or organization name
-  period       String // "2020-2023", "2023-Present"
-  description  String?   @db.Text // Role description
+  title        String
+  organization String
+  period       String
+  description  String?   @db.Text
   startDate    DateTime?
   endDate      DateTime?
   isCurrent    Boolean   @default(false)
-  order        Int       @default(0) // Display order
+  order        Int       @default(0)
   createdAt    DateTime  @default(now())
 
   user User  @relation("UserTrajectories", fields: [userId], references: [id], onDelete: Cascade)
@@ -355,16 +222,16 @@ model Statistics {
   id          String   @id @default(uuid())
   userId      String
   clubId      String?
-  season      String // "2023-2024", "Career"
+  season      String
   gamesPlayed Int      @default(0)
   goals       Int      @default(0)
   assists     Int      @default(0)
-  points      Int      @default(0) // goals + assists
-  wins        Int      @default(0) // For coaches/goalies
+  points      Int      @default(0)
+  wins        Int      @default(0)
   losses      Int      @default(0)
   draws       Int      @default(0)
-  cleanSheets Int      @default(0) // For goalies
-  saves       Int      @default(0) // For goalies
+  cleanSheets Int      @default(0)
+  saves       Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -379,9 +246,9 @@ model Statistics {
 
 model Conversation {
   id        String   @id @default(uuid())
-  isGroup   Boolean  @default(false) // Support group chats
-  name      String? // Group name
-  avatar    String? // Group avatar
+  isGroup   Boolean  @default(false)
+  name      String?
+  avatar    String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -414,9 +281,9 @@ model Message {
   conversationId String
   senderId       String
   isRead         Boolean   @default(false)
-  readAt         DateTime? // When message was read
-  imageUrl       String? // Image attachment
-  fileUrl        String? // File attachment
+  readAt         DateTime?
+  imageUrl       String?
+  fileUrl        String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -429,50 +296,41 @@ model Message {
   @@index([conversationId, createdAt])
 }
 
-model Share {
+model EmailVerificationToken {
   id        String   @id @default(uuid())
+  token     String   @unique @default(uuid())
   userId    String
-  postId    String
+  expiresAt DateTime
+  used      Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  user User @relation("UserShares", fields: [userId], references: [id], onDelete: Cascade)
-  post Post @relation("PostShares", fields: [postId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, postId])
-  @@index([userId])
-  @@index([postId])
-  @@index([createdAt])
-}
-
-model Story {
-  id        String   @id @default(uuid())
-  userId    String
-  imageUrl  String?
-  videoUrl  String?
-  text      String?  @db.Text
-  expiresAt DateTime // 24 hours from creation
-  createdAt DateTime @default(now())
-
-  user  User        @relation("UserStories", fields: [userId], references: [id], onDelete: Cascade)
-  views StoryView[]
+  user User @relation("UserVerificationTokens", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([token])
   @@index([expiresAt])
-  @@index([userId, expiresAt])
 }
 
-model StoryView {
-  id       String   @id @default(uuid())
-  storyId  String
-  userId   String
-  viewedAt DateTime @default(now())
+enum NotificationType {
+  CLUB_INVITE
+  CLUB_ACCEPT
+  JOB_APPLICATION_UPDATE
+}
 
-  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
-  user  User  @relation("UserStoryViews", fields: [userId], references: [id], onDelete: Cascade)
+model Notification {
+  id          String           @id @default(uuid())
+  recipientId String
+  actorId     String
+  type        NotificationType
+  entityId    String?
+  isRead      Boolean          @default(false)
+  createdAt   DateTime         @default(now())
 
-  @@unique([storyId, userId])
-  @@index([storyId])
-  @@index([userId])
+  recipient User @relation("NotificationsReceived", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User @relation("NotificationsSent", fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, isRead])
+  @@index([recipientId, createdAt])
 }
 
 enum Role {
@@ -482,8 +340,6 @@ enum Role {
   SUPERADMIN
 }
 
-/// Tracks which authentication provider the user registered with.
-/// EMAIL = standard email/password, GOOGLE = Google OAuth, APPLE = Apple Sign In.
 enum AuthProvider {
   EMAIL
   GOOGLE
@@ -519,16 +375,6 @@ enum Currency {
   ARS
 }
 
-enum AuthorType {
-  USER
-  CLUB
-}
-
-enum FollowerType {
-  USER
-  CLUB
-}
-
 enum PositionType {
   PLAYER
   COACH
@@ -547,47 +393,10 @@ enum JobLevel {
   AMATEUR
 }
 
-model EmailVerificationToken {
-  id        String   @id @default(uuid())
-  token     String   @unique @default(uuid())
-  userId    String
-  expiresAt DateTime
-  used      Boolean  @default(false)
-  createdAt DateTime @default(now())
-
-  user User @relation("UserVerificationTokens", fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([token])
-  @@index([expiresAt])
-}
-
-enum NotificationType {
-  LIKE_POST
-  LIKE_COMMENT
-  COMMENT_POST
-  REPLY_COMMENT
-  FOLLOW_USER
-  CLUB_INVITE
-  CLUB_ACCEPT
-  JOB_APPLICATION_UPDATE
-}
-
-model Notification {
-  id          String           @id @default(uuid())
-  recipientId String
-  actorId     String
-  type        NotificationType
-  entityId    String?
-  postId      String?
-  isRead      Boolean          @default(false)
-  createdAt   DateTime         @default(now())
-
-  recipient User  @relation("NotificationsReceived", fields: [recipientId], references: [id], onDelete: Cascade)
-  actor     User  @relation("NotificationsSent", fields: [actorId], references: [id], onDelete: Cascade)
-  post      Post? @relation(fields: [postId], references: [id], onDelete: Cascade)
-
-  @@index([recipientId, isRead])
-  @@index([recipientId, createdAt])
-  @@index([postId])
+enum ApplicationStatus {
+  PENDING
+  UNDER_REVIEW
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
 }

@@ -8,7 +8,6 @@ export interface CreateNotificationDto {
   actorId: string;
   type: NotificationType;
   entityId?: string;
-  postId?: string;
 }
 
 @Injectable()

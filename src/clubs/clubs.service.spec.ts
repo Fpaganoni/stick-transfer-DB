@@ -1,4 +1,5 @@
 import { Test, TestingModule } from "@nestjs/testing";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { ClubsService } from "./clubs.service";
 import { PrismaService } from "../prisma.service";
 
@@ -17,20 +18,27 @@ const mockPrismaService = {
   },
 };
 
+const mockEventEmitter = {
+  emit: jest.fn(),
+};
+
 describe("ClubsService", () => {
   let service: ClubsService;
   let prisma: typeof mockPrismaService;
+  let eventEmitter: typeof mockEventEmitter;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ClubsService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: EventEmitter2, useValue: mockEventEmitter },
       ],
     }).compile();
 
     service = module.get<ClubsService>(ClubsService);
     prisma = module.get(PrismaService);
+    eventEmitter = module.get(EventEmitter2);
     jest.clearAllMocks();
   });
 
@@ -42,7 +50,12 @@ describe("ClubsService", () => {
 
       const result = await service.findAll();
 
-      expect(prisma.club.findMany).toHaveBeenCalledWith({ include: { teams: true } });
+      expect(prisma.club.findMany).toHaveBeenCalledWith({
+        include: {
+          teams: true,
+          admin: true,
+        },
+      });
       expect(result).toEqual(mockClubs);
     });
   });
@@ -95,6 +108,12 @@ describe("ClubsService", () => {
 
       expect(prisma.clubMember.create).toHaveBeenCalledWith({
         data: { clubId: "club-1", userId: "user-1", invitedById: "admin-1", status: "PENDING" },
+      });
+      expect(eventEmitter.emit).toHaveBeenCalledWith("club.invite_sent", {
+        actorId: "admin-1",
+        recipientId: "user-1",
+        type: "CLUB_INVITE",
+        entityId: "club-1",
       });
       expect(result).toEqual(mockMember);
     });

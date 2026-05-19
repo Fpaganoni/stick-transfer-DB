@@ -1,9 +1,4 @@
 enum NotificationType {
-  LIKE_POST
-  LIKE_COMMENT
-  COMMENT_POST
-  REPLY_COMMENT
-  FOLLOW_USER
   CLUB_INVITE
   CLUB_ACCEPT
   JOB_APPLICATION_UPDATE
@@ -15,12 +10,10 @@ type Notification {
   actorId: ID!
   type: NotificationType!
   entityId: String
-  postId: String
   isRead: Boolean!
   createdAt: String!
   recipient: User!
   actor: User!
-  post: Post
 }
 
 extend type Query {

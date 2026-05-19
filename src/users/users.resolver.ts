@@ -9,7 +9,7 @@ import {
 } from "@nestjs/graphql";
 import { UsersService } from "./users.service";
 import { AuthService } from "../auth/auth.service";
-import { CloudinaryService } from "../integrations/cloudinary.service";
+import { CloudinaryService } from "../uploads/cloudinary.service";
 import { PrismaService } from "../prisma.service";
 
 @Resolver("User")

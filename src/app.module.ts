@@ -14,12 +14,8 @@ import { TeamsModule } from "./teams/teams.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { SearchModule } from "./search/search.module";
 import { PaymentsModule } from "./payments/payments.module";
-import { PostsModule } from "./posts/posts.module";
-import { FollowModule } from "./follow/follow.module";
 import { JobsModule } from "./jobs/jobs.module";
 import { MessagingModule } from "./messaging/messaging.module";
-import { StoriesModule } from "./stories/stories.module";
-import { ProfileLikesModule } from "./profile-likes/profile-likes.module";
 import { ExploreModule } from "./explore/explore.module";
 import { UploadsModule } from "./uploads/uploads.module";
 
@@ -42,12 +38,8 @@ import { UploadsModule } from "./uploads/uploads.module";
     NotificationsModule,
     SearchModule,
     PaymentsModule,
-    PostsModule,
-    FollowModule,
     JobsModule,
     MessagingModule,
-    StoriesModule,
-    ProfileLikesModule,
     ExploreModule,
     UploadsModule,
   ],

@@ -73,71 +73,6 @@ type ClubMember {
   createdAt: String!
 }
 
-type Post {
-  id: ID!
-  content: String!
-  imageUrl: String
-  images: [String!]!
-  videoUrl: String
-  userId: ID!
-  clubId: ID
-  isClubPost: Boolean!
-  visibility: String!
-  isPinned: Boolean!
-  user: User!
-  club: Club
-  comments: [Comment!]!
-  likes: [Like!]!
-  likesCount: Int!
-  createdAt: String!
-  updatedAt: String!
-}
-
-type Comment {
-  id: ID!
-  content: String!
-  postId: ID!
-  userId: ID!
-  parentCommentId: ID
-  user: User!
-  parentComment: Comment
-  replies: [Comment!]!
-  likes: [CommentLike!]!
-  likesCount: Int!
-  createdAt: String!
-  updatedAt: String!
-}
-
-type CommentLike {
-  id: ID!
-  user: User!
-  createdAt: String!
-}
-
-type Like {
-  id: ID!
-  user: User!
-  createdAt: String!
-}
-
-type Follow {
-  id: ID!
-  followerType: String!
-  followerId: String!
-  followingType: String!
-  followingId: String!
-  createdAt: String!
-}
-
-type ProfileLike {
-  id: ID!
-  likerType: String!
-  likerId: String!
-  profileType: String!
-  profileId: String!
-  createdAt: String!
-}
-
 type JobOpportunity {
   id: ID!
   title: String!
@@ -268,38 +203,6 @@ type Message {
   updatedAt: String!
 }
 
-type Share {
-  id: ID!
-  userId: ID!
-  postId: ID!
-  createdAt: String!
-  user: User!
-  post: Post!
-}
-
-type Story {
-  id: ID!
-  userId: ID!
-  imageUrl: String
-  videoUrl: String
-  text: String
-  expiresAt: String!
-  createdAt: String!
-  user: User!
-  views: [StoryView!]!
-  viewsCount: Int!
-  isViewed(userId: String!): Boolean!
-}
-
-type StoryView {
-  id: ID!
-  storyId: ID!
-  userId: ID!
-  viewedAt: String!
-  user: User!
-  story: Story!
-}
-
 type PaymentIntent {
   id: ID!
   clientSecret: String
@@ -322,6 +225,11 @@ type ClubAdminView {
   adminCity: String
 }
 
+type S3PresignedUrl {
+  uploadUrl: String!
+  finalUrl: String!
+}
+
 type Query {
   # Users
   users: [User!]!
@@ -336,21 +244,6 @@ type Query {
   club(id: ID!): Club
   clubAdmins: [ClubAdminView!]!
   teamsByClub(clubId: ID!): [Team!]!
-
-  # Posts (Social Feed)
-  posts(limit: Int, offset: Int): [Post!]!
-  post(id: ID!): Post
-  postsByUser(userId: ID!): [Post!]!
-  postsByClub(clubId: ID!): [Post!]!
-
-  # Comments
-  comments(postId: ID!): [Comment!]!
-
-  # Follow
-  followers(entityType: String!, entityId: String!): [Follow!]!
-  following(entityType: String!, entityId: String!): [Follow!]!
-  followersCount(entityType: String!, entityId: String!): Int!
-  followingCount(entityType: String!, entityId: String!): Int!
 
   # Job Opportunities
   jobOpportunities(
@@ -371,22 +264,6 @@ type Query {
   myConversations(userId: String!): [Conversation!]!
   conversation(id: String!): Conversation
   messages(conversationId: String!): [Message!]!
-
-  # Stories
-  activeStories(userId: String!): [Story!]!
-  userStories(userId: String!): [Story!]!
-  storyViewers(storyId: String!): [StoryView!]!
-
-  # Profile Likes
-  profileLikes(profileType: String!, profileId: String!): [ProfileLike!]!
-  profileLikesCount(profileType: String!, profileId: String!): Int!
-  hasLikedProfile(
-    likerType: String!
-    likerId: String!
-    profileType: String!
-    profileId: String!
-  ): Boolean!
-  likedProfiles(likerType: String!, likerId: String!): [ProfileLike!]!
 
   # Explore
   exploreUsers(
@@ -409,11 +286,6 @@ type Query {
   availablePositions: [String!]!
   availableLeagues: [String!]!
   availableCountries: [String!]!
-}
-
-type S3PresignedUrl {
-  uploadUrl: String!
-  finalUrl: String!
 }
 
 type Mutation {
@@ -493,55 +365,6 @@ type Mutation {
   uploadClubLogo(clubId: ID!, base64: String!): Boolean!
   uploadClubCoverImage(clubId: ID!, base64: String!): Boolean!
 
-  # Posts
-  createPost(
-    content: String!
-    userId: ID!
-    clubId: ID
-    imageUrl: String
-    images: [String!]
-    videoUrl: String
-    visibility: String
-    isPinned: Boolean
-  ): Post!
-  updatePost(
-    id: ID!
-    content: String
-    imageUrl: String
-    images: [String!]
-    videoUrl: String
-    visibility: String
-    isPinned: Boolean
-  ): Post!
-  deletePost(id: ID!): Boolean!
-
-  # Comments & Likes
-  createComment(
-    postId: ID!
-    userId: ID!
-    content: String!
-    parentCommentId: ID
-  ): Comment!
-  deleteComment(id: ID!): Boolean!
-  likeComment(commentId: ID!, userId: ID!): CommentLike!
-  unlikeComment(commentId: ID!, userId: ID!): Boolean!
-  likePost(postId: ID!, userId: ID!): Like!
-  unlikePost(postId: ID!, userId: ID!): Boolean!
-
-  # Follow
-  follow(
-    followerType: String!
-    followerId: String!
-    followingType: String!
-    followingId: String!
-  ): Follow!
-  unfollow(
-    followerType: String!
-    followerId: String!
-    followingType: String!
-    followingId: String!
-  ): Boolean!
-
   # Job Opportunities
   createJobOpportunity(
     title: String!
@@ -584,28 +407,4 @@ type Mutation {
 
   # Payments
   createPaymentIntent(amount: Float!, currency: String): PaymentIntent!
-
-  # Stories
-  createStory(
-    userId: String!
-    imageUrl: String
-    videoUrl: String
-    text: String
-  ): Story!
-  viewStory(storyId: String!, userId: String!): StoryView!
-  deleteStory(id: String!): Boolean!
-
-  # Profile Likes
-  likeProfile(
-    likerType: String!
-    likerId: String!
-    profileType: String!
-    profileId: String!
-  ): ProfileLike!
-  unlikeProfile(
-    likerType: String!
-    likerId: String!
-    profileType: String!
-    profileId: String!
-  ): Boolean!
 }

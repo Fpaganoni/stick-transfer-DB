@@ -3,11 +3,11 @@ import { UsersService } from "./users.service";
 import { UsersResolver } from "./users.resolver";
 import { PrismaService } from "../prisma.service";
 import { AuthModule } from "../auth/auth.module";
-import { CloudinaryService } from "../integrations/cloudinary.service";
+import { UploadsModule } from "../uploads/uploads.module";
 
 @Module({
-  imports: [AuthModule],
-  providers: [UsersService, UsersResolver, PrismaService, CloudinaryService],
+  imports: [AuthModule, UploadsModule],
+  providers: [UsersService, UsersResolver, PrismaService],
   exports: [UsersService],
 })
 export class UsersModule {}
