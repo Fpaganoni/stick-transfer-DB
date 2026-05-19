@@ -8,11 +8,6 @@ async function main() {
 
   // Clear existing data
   console.log("🗑️  Clearing existing data...");
-  // NOTE: Not deleting stories/storyViews so they accumulate on each seed run
-  // await prisma.storyView.deleteMany();
-  // await prisma.story.deleteMany();
-  await prisma.share.deleteMany();
-  await prisma.commentLike.deleteMany();
   await prisma.message.deleteMany();
   await prisma.conversationParticipant.deleteMany();
   await prisma.conversation.deleteMany();
@@ -20,11 +15,6 @@ async function main() {
   await prisma.jobOpportunity.deleteMany();
   await prisma.statistics.deleteMany();
   await prisma.trajectory.deleteMany();
-  await prisma.profileLike.deleteMany();
-  await prisma.follow.deleteMany();
-  await prisma.like.deleteMany();
-  await prisma.comment.deleteMany();
-  await prisma.post.deleteMany();
   await prisma.clubMember.deleteMany();
   await prisma.team.deleteMany();
   await prisma.club.deleteMany();
@@ -485,31 +475,32 @@ async function main() {
     return femaleNames.includes(firstName) ? "female" : "male";
   };
 
-  const players = await Promise.all(
-    playerData.map((player, index) => {
-      const gender = getGenderFromName(player.name);
-      const genderPath = gender === "female" ? "women" : "men";
-      const imageNumber = index % 80; // randomuser.me has 0-99, use 0-79 for variety
+  const players = [];
+  for (let index = 0; index < playerData.length; index++) {
+    const player = playerData[index];
+    const gender = getGenderFromName(player.name);
+    const genderPath = gender === "female" ? "women" : "men";
+    const imageNumber = index % 80;
 
-      return prisma.user.create({
-        data: {
-          email: player.email,
-          username: player.username,
-          name: player.name,
-          password: hashedPassword,
-          role: "PLAYER",
-          position: player.position,
-          bio: `Passionate field hockey player. Training hard every day! 🏑`,
-          avatar: `https://randomuser.me/api/portraits/${genderPath}/${imageNumber}.jpg`,
-          country: player.country,
-          city: player.city,
-          yearsOfExperience: index % 2 === 0 ? 3 : 8, // Half Amateur (<5), half Professional (>=5)
-          isVerified: index % 4 === 0,
-          isEmailVerified: index % 3 === 0, // ~33% have verified emails
-        },
-      });
-    }),
-  );
+    const p = await prisma.user.create({
+      data: {
+        email: player.email,
+        username: player.username,
+        name: player.name,
+        password: hashedPassword,
+        role: "PLAYER",
+        position: player.position,
+        bio: `Passionate field hockey player. Training hard every day! 🏑`,
+        avatar: `https://randomuser.me/api/portraits/${genderPath}/${imageNumber}.jpg`,
+        country: player.country,
+        city: player.city,
+        yearsOfExperience: index % 2 === 0 ? 3 : 8, // Half Amateur (<5), half Professional (>=5)
+        isVerified: index % 4 === 0,
+        isEmailVerified: index % 3 === 0, // ~33% have verified emails
+      },
+    });
+    players.push(p);
+  }
 
   console.log(`✅ Created ${players.length} players\n`);
 
@@ -575,32 +566,33 @@ async function main() {
     },
   ];
 
-  const coaches = await Promise.all(
-    coachData.map((coach, index) => {
-      const gender = getGenderFromName(coach.name);
-      const genderPath = gender === "female" ? "women" : "men";
-      const imageNumber = (index + 25) % 80; // Offset to avoid same images as players
+  const coaches = [];
+  for (let index = 0; index < coachData.length; index++) {
+    const coach = coachData[index];
+    const gender = getGenderFromName(coach.name);
+    const genderPath = gender === "female" ? "women" : "men";
+    const imageNumber = (index + 25) % 80;
 
-      return prisma.user.create({
-        data: {
-          email: coach.email,
-          username: coach.username,
-          name: coach.name,
-          password: hashedPassword,
-          role: "COACH",
-          bio: `Professional field hockey coach with ${
-            10 + index * 2
-          } years of experience. Developing champions on and off the field! 🏑`,
-          avatar: `https://randomuser.me/api/portraits/${genderPath}/${imageNumber}.jpg`,
-          country: coach.country,
-          city: coach.city,
-          yearsOfExperience: 10 + index, // All coaches are Professional (>=5)
-          isVerified: index % 2 === 0,
-          isEmailVerified: index % 2 === 0, // 50% have verified emails
-        },
-      });
-    }),
-  );
+    const c = await prisma.user.create({
+      data: {
+        email: coach.email,
+        username: coach.username,
+        name: coach.name,
+        password: hashedPassword,
+        role: "COACH",
+        bio: `Professional field hockey coach with ${
+          10 + index * 2
+        } years of experience. Developing champions on and off the field! 🏑`,
+        avatar: `https://randomuser.me/api/portraits/${genderPath}/${imageNumber}.jpg`,
+        country: coach.country,
+        city: coach.city,
+        yearsOfExperience: 10 + index, // All coaches are Professional (>=5)
+        isVerified: index % 2 === 0,
+        isEmailVerified: index % 2 === 0, // 50% have verified emails
+      },
+    });
+    coaches.push(c);
+  }
 
   console.log(`✅ Created ${coaches.length} coaches\n`);
 
@@ -697,26 +689,27 @@ async function main() {
     },
   ];
 
-  const clubAdmins = await Promise.all(
-    clubAdminData.map((admin, index) =>
-      prisma.user.create({
-        data: {
-          email: admin.email,
-          username: admin.username,
-          name: admin.name,
-          password: hashedPassword,
-          role: "CLUB_ADMIN",
-          bio: `Club Administrator with passion for field hockey. Managing and growing the club every day! 🏑`,
-          avatar: `https://randomuser.me/api/portraits/men/${50 + index}.jpg`,
-          country: admin.country,
-          city: admin.city,
-          yearsOfExperience: 15, // Club admins are Professional by default
-          isVerified: true,
-          isEmailVerified: true,
-        },
-      }),
-    ),
-  );
+  const clubAdmins = [];
+  for (let index = 0; index < clubAdminData.length; index++) {
+    const admin = clubAdminData[index];
+    const ad = await prisma.user.create({
+      data: {
+        email: admin.email,
+        username: admin.username,
+        name: admin.name,
+        password: hashedPassword,
+        role: "CLUB_ADMIN",
+        bio: `Club Administrator with passion for field hockey. Managing and growing the club every day! 🏑`,
+        avatar: `https://randomuser.me/api/portraits/men/${50 + index}.jpg`,
+        country: admin.country,
+        city: admin.city,
+        yearsOfExperience: 15, // Club admins are Professional by default
+        isVerified: true,
+        isEmailVerified: true,
+      },
+    });
+    clubAdmins.push(ad);
+  }
 
   console.log(`✅ Created ${clubAdmins.length} club admins\n`);
 
@@ -725,498 +718,59 @@ async function main() {
     "🔗 Populating complete club data and assigning admins/members...",
   );
 
-  await Promise.all(
-    clubs.map((club, index) =>
-      prisma.club.update({
-        where: { id: club.id },
-        data: {
-          adminId: clubAdmins[index % clubAdmins.length].id,
-          email:
-            club.email ||
-            `contact@${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}.com`,
-          phone:
-            club.phone ||
-            `+34 600 ${Math.floor(100000 + Math.random() * 900000)}`,
-          website:
-            club.website ||
-            `https://www.${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}.com`,
-          description:
-            club.description ||
-            `Welcome to ${club.name}, one of the premier field hockey clubs with a rich history and a passionate community.`,
-          bio:
-            club.bio ||
-            `Official account of ${club.name}. Join us on the pitch!`,
-          league: club.league || "Primera División",
-          instagram: `https://instagram.com/${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}`,
-          twitter: `https://x.com/${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}`,
-          facebook: `https://facebook.com/${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}`,
-          tiktok: `https://tiktok.com/@${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}`,
-        },
-      }),
-    ),
-  );
+  for (let index = 0; index < clubs.length; index++) {
+    const club = clubs[index];
+    await prisma.club.update({
+      where: { id: club.id },
+      data: {
+        adminId: clubAdmins[index % clubAdmins.length].id,
+        email:
+          club.email ||
+          `contact@${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}.com`,
+        phone:
+          club.phone ||
+          `+34 600 ${Math.floor(100000 + Math.random() * 900000)}`,
+        website:
+          club.website ||
+          `https://www.${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}.com`,
+        description:
+          club.description ||
+          `Welcome to ${club.name}, one of the premier field hockey clubs with a rich history and a passionate community.`,
+        bio:
+          club.bio ||
+          `Official account of ${club.name}. Join us on the pitch!`,
+        league: club.league || "Primera División",
+        instagram: `https://instagram.com/${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}`,
+        twitter: `https://x.com/${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}`,
+        facebook: `https://facebook.com/${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}`,
+        tiktok: `https://tiktok.com/@${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}`,
+      },
+    });
+  }
 
-  const clubMembersCreated = await Promise.all(
-    [...players, ...coaches, ...clubAdmins].map((user, index) => {
-      const club = clubs[index % clubs.length];
-      return prisma.clubMember.create({
-        data: {
-          clubId: club.id,
-          userId: user.id,
-          roleInClub: user.role === "COACH" ? "COACH" : "MEMBER",
-          status: "ACTIVE",
-          invitedById: clubAdmins[index % clubAdmins.length].id,
-        },
-      });
-    }),
-  );
+  const clubMembersCreated = [];
+  const allMembers = [...players, ...coaches, ...clubAdmins];
+  for (let index = 0; index < allMembers.length; index++) {
+    const user = allMembers[index];
+    const club = clubs[index % clubs.length];
+    const cm = await prisma.clubMember.create({
+      data: {
+        clubId: club.id,
+        userId: user.id,
+        roleInClub: user.role === "COACH" ? "COACH" : "MEMBER",
+        status: "ACTIVE",
+        invitedById: clubAdmins[index % clubAdmins.length].id,
+      },
+    });
+    clubMembersCreated.push(cm);
+  }
 
   console.log(
     `✅ Each club now has a dedicated CLUB_ADMIN and fully populated data`,
   );
   console.log(`✅ Created ${clubMembersCreated.length} club members\n`);
 
-  // ========== POSTS ==========
-  console.log("📝 Creating field hockey posts...");
 
-  const postContents = [
-    "Amazing training session today! Feeling stronger every day 💪🏑",
-    "Game day tomorrow! Let's bring home the win! 🔥",
-    "New season, new goals. Ready to give it all! ⚡",
-    "Great team chemistry today. We're ready for the championship! 🏆",
-    "Recovery day but the mind never rests. Studying game tapes 🎥",
-    "Just scored the winning goal in overtime! What a rush! 🎯",
-    "Proud of my team's performance today. Hard work pays off! 💯",
-    "Early morning training hits different when you love what you do 🌅",
-    "Shoutout to my teammates for the amazing assist! Teamwork makes the dream work! 🤝",
-    "Working on penalty corners today. Precision is everything! 🎯",
-    "First game of the season and we dominated! Let's keep this momentum! 🚀",
-    "Tough loss today, but we'll come back stronger. That's the spirit! 💪",
-    "Nothing beats the feeling of playing on home turf! 🏟️",
-    "Training in the rain? No problem. We're built different! ☔🏑",
-    "Celebrating our club's 100th anniversary! Proud to be part of this legacy! 🎉",
-    "International tournament next week. Representing my country! 🌍",
-    "Just had the best practice session with the national team! 🇦🇷🇪🇸",
-    "Goalkeeper training is no joke! Respect to all my fellow keepers! 🧤",
-    "Speed and agility drills today. Getting faster every week! ⚡",
-    "Match day atmosphere is unbeatable! Thanks to all the fans! 👏",
-    "Working with an amazing coach who pushes me to be my best! 🙏",
-    "Summer hockey camp starts next week! Can't wait to meet the kids! 👶🏑",
-    "Pre-season fitness test complete. Ready for the new season! 📊",
-    "Beautiful day for outdoor training! Love this sport! ☀️",
-    "Championship final in 3 days. The preparation is real! 🏆",
-    "Honored to captain this amazing team! Leadership is a privilege! ©️",
-    "Recovery session: ice baths and stretching. Taking care of the body! 🧊",
-    "Watching game footage and learning from mistakes. Always improving! 📹",
-    "New hockey sticks arrived! Can't wait to test them out! 🏑✨",
-    "Team bonding dinner tonight. This squad is family! 🍽️❤️",
-  ];
-
-  // Field hockey images from Cloudinary CDN (production-ready)
-  const postImages = [
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_action.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_training.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_celebration.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_goalkeeper.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_equipment.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_match.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_youth.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_stadium.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_victory.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_practice.jpg",
-  ];
-
-  const posts = [];
-  const allUsers = [...players, ...coaches];
-
-  // Create 40 varied user posts
-  for (let i = 0; i < 40; i++) {
-    const randomUser = allUsers[Math.floor(Math.random() * allUsers.length)];
-    const hasImage = Math.random() > 0.2; // 80% of posts have images
-    const hasMultipleImages = hasImage && Math.random() > 0.6; // 40% of image posts have multiple images
-
-    const post = await prisma.post.create({
-      data: {
-        content: postContents[Math.floor(Math.random() * postContents.length)],
-        userId: randomUser.id,
-        imageUrl: hasImage
-          ? postImages[Math.floor(Math.random() * postImages.length)]
-          : null,
-        images: hasMultipleImages
-          ? [
-              postImages[Math.floor(Math.random() * postImages.length)],
-              postImages[Math.floor(Math.random() * postImages.length)],
-              postImages[Math.floor(Math.random() * postImages.length)],
-            ]
-          : [],
-        visibility: i % 7 === 0 ? "FRIENDS" : "PUBLIC",
-        isPinned: i % 15 === 0,
-      },
-    });
-    posts.push(post);
-  }
-
-  // Club posts (15 posts)
-  const clubPostContents = [
-    "🏑 Exciting news! Registration for the new season is now open!",
-    "Congratulations to our U18 team for winning the regional championship! 🏆",
-    "Join us this Saturday for our open training day! Everyone welcome! 🙌",
-    "We're proud to announce our new partnership with [Sponsor]. Together we're stronger! 💪",
-    "Match day! Come support our first team against our rivals! 🔥",
-    "Throwback to our historic championship win 5 years ago! Great memories! 📸",
-    "New club merchandise available now in our online store! 🛍️",
-    "Thanks to all our volunteers who make this club special! ❤️",
-    "Summer hockey camp registration opens next week! Limited spots! 🏕️",
-    "Congratulations to [Player] for being selected for the national team! 🇪🇸🇦🇷",
-    "Facilities upgrade complete! New state-of-the-art training ground! 🏟️",
-    "Club trials next month! Looking for talented players to join our family! 🔍",
-    "Celebrating 50 years of field hockey excellence! 🎉",
-    "Important: Season schedule has been updated. Check the website for details! 📅",
-    "Our women's team just qualified for the European Cup! Historic moment! 🌍",
-  ];
-
-  for (let i = 0; i < 15; i++) {
-    const randomClub = clubs[Math.floor(Math.random() * clubs.length)];
-    const randomAdmin =
-      players[Math.floor(Math.random() * Math.min(5, players.length))];
-
-    const post = await prisma.post.create({
-      data: {
-        content: clubPostContents[i],
-        userId: randomAdmin.id,
-        clubId: randomClub.id,
-        isClubPost: true,
-        imageUrl: postImages[Math.floor(Math.random() * postImages.length)],
-        visibility: "PUBLIC",
-        isPinned: i < 2,
-      },
-    });
-    posts.push(post);
-  }
-
-  console.log(`✅ Created ${posts.length} posts\n`);
-
-  // ========== COMMENTS ==========
-  console.log("💬 Creating comments...");
-
-  const commentTexts = [
-    "¡Increíble! 🔥",
-    "Let's go team! 💪",
-    "Amazing work!",
-    "¡Vamos! 🏑",
-    "So proud of you!",
-    "Keep it up! 👏",
-    "Legendary performance!",
-    "You're an inspiration! ⭐",
-    "This is what dedication looks like!",
-    "Can't wait for the next match!",
-    "Love the energy! ⚡",
-    "Best team in the league! 🏆",
-    "Respect! 🙌",
-    "Hard work paying off!",
-    "Absolutely brilliant! 💯",
-  ];
-
-  let commentCount = 0;
-  for (const post of posts) {
-    const numComments = Math.floor(Math.random() * 5) + 1; // 1-5 comments per post
-    for (let i = 0; i < numComments; i++) {
-      const randomUser = allUsers[Math.floor(Math.random() * allUsers.length)];
-      await prisma.comment.create({
-        data: {
-          content:
-            commentTexts[Math.floor(Math.random() * commentTexts.length)],
-          postId: post.id,
-          userId: randomUser.id,
-        },
-      });
-      commentCount++;
-    }
-  }
-
-  console.log(`✅ Created ${commentCount} comments\n`);
-
-  // ========== LIKES ==========
-  console.log("❤️  Creating likes...");
-
-  let likeCount = 0;
-  for (const post of posts) {
-    const numLikes = Math.floor(Math.random() * 15) + 5; // 5-20 likes per post
-    const shuffledUsers = [...allUsers].sort(() => Math.random() - 0.5);
-
-    for (let i = 0; i < Math.min(numLikes, shuffledUsers.length); i++) {
-      try {
-        await prisma.like.create({
-          data: {
-            postId: post.id,
-            userId: shuffledUsers[i].id,
-          },
-        });
-        likeCount++;
-      } catch (error) {
-        // Skip duplicates
-      }
-    }
-  }
-
-  console.log(`✅ Created ${likeCount} likes\n`);
-
-  // ========== FOLLOWS ==========
-  console.log("👥 Creating follows...");
-
-  let followCount = 0;
-
-  // IMPORTANT: Create follows between users who have stories
-  // This ensures that when we query activeStories, we see stories from different users
-  const usersWithStories = [
-    // First 15 players who create stories
-    ...players.slice(0, 15),
-    // First 3 coaches who create stories
-    ...coaches.slice(0, 3),
-    // Additional players with text-only stories
-    players[16],
-    players[17],
-    players[18],
-  ];
-
-  // Make each user with stories follow all other users with stories
-  for (const follower of usersWithStories) {
-    for (const following of usersWithStories) {
-      if (follower.id !== following.id) {
-        try {
-          await prisma.follow.create({
-            data: {
-              followerType: "USER",
-              followerId: follower.id,
-              followingType: "USER",
-              followingId: following.id,
-            },
-          });
-          followCount++;
-        } catch (error) {
-          // Skip duplicates
-        }
-      }
-    }
-  }
-
-  // Create additional random USER-to-USER follow network
-  for (let i = 0; i < 60; i++) {
-    const follower = allUsers[Math.floor(Math.random() * allUsers.length)];
-    const following = allUsers[Math.floor(Math.random() * allUsers.length)];
-
-    if (follower.id !== following.id) {
-      try {
-        await prisma.follow.create({
-          data: {
-            followerType: "USER",
-            followerId: follower.id,
-            followingType: "USER",
-            followingId: following.id,
-          },
-        });
-        followCount++;
-      } catch (error) {
-        // Skip duplicates
-      }
-    }
-  }
-
-  // Create CLUB-to-USER follows (clubs following players/coaches)
-  console.log("   🏑 Creating club-to-user follows...");
-  for (const club of clubs) {
-    // Each club follows 5-10 random players
-    const numPlayersToFollow = 5 + Math.floor(Math.random() * 6);
-    const shuffledPlayers = [...players].sort(() => Math.random() - 0.5);
-
-    for (
-      let i = 0;
-      i < Math.min(numPlayersToFollow, shuffledPlayers.length);
-      i++
-    ) {
-      try {
-        await prisma.follow.create({
-          data: {
-            followerType: "CLUB",
-            followerId: club.id,
-            followingType: "USER",
-            followingId: shuffledPlayers[i].id,
-          },
-        });
-        followCount++;
-      } catch (error) {
-        // Skip duplicates
-      }
-    }
-
-    // Each club follows 2-4 random coaches
-    const numCoachesToFollow = 2 + Math.floor(Math.random() * 3);
-    const shuffledCoaches = [...coaches].sort(() => Math.random() - 0.5);
-
-    for (
-      let i = 0;
-      i < Math.min(numCoachesToFollow, shuffledCoaches.length);
-      i++
-    ) {
-      try {
-        await prisma.follow.create({
-          data: {
-            followerType: "CLUB",
-            followerId: club.id,
-            followingType: "USER",
-            followingId: shuffledCoaches[i].id,
-          },
-        });
-        followCount++;
-      } catch (error) {
-        // Skip duplicates
-      }
-    }
-  }
-
-  // Create USER-to-CLUB follows (users following clubs)
-  console.log("   👤 Creating user-to-club follows...");
-  for (const user of allUsers) {
-    // Each user follows 2-5 random clubs
-    const numClubsToFollow = 2 + Math.floor(Math.random() * 4);
-    const shuffledClubs = [...clubs].sort(() => Math.random() - 0.5);
-
-    for (let i = 0; i < Math.min(numClubsToFollow, shuffledClubs.length); i++) {
-      try {
-        await prisma.follow.create({
-          data: {
-            followerType: "USER",
-            followerId: user.id,
-            followingType: "CLUB",
-            followingId: shuffledClubs[i].id,
-          },
-        });
-        followCount++;
-      } catch (error) {
-        // Skip duplicates
-      }
-    }
-  }
-
-  // Create CLUB-to-CLUB follows (clubs following other clubs)
-  console.log("   🏟️  Creating club-to-club follows...");
-  for (const club of clubs) {
-    // Each club follows 2-4 other clubs (for networking, partnerships, etc.)
-    const numClubsToFollow = 2 + Math.floor(Math.random() * 3);
-    const otherClubs = clubs.filter((c) => c.id !== club.id);
-    const shuffledClubs = otherClubs.sort(() => Math.random() - 0.5);
-
-    for (let i = 0; i < Math.min(numClubsToFollow, shuffledClubs.length); i++) {
-      try {
-        await prisma.follow.create({
-          data: {
-            followerType: "CLUB",
-            followerId: club.id,
-            followingType: "CLUB",
-            followingId: shuffledClubs[i].id,
-          },
-        });
-        followCount++;
-      } catch (error) {
-        // Skip duplicates
-      }
-    }
-  }
-
-  console.log(
-    `✅ Created ${followCount} follows (users, clubs, bidirectional)\n`,
-  );
-
-  // ========== PROFILE LIKES ==========
-  console.log("❤️ Creating profile likes...");
-
-  let profileLikeCount = 0;
-
-  // Users liking other user profiles
-  for (let i = 0; i < 100; i++) {
-    const liker = allUsers[Math.floor(Math.random() * allUsers.length)];
-    const liked = allUsers[Math.floor(Math.random() * allUsers.length)];
-
-    if (liker.id !== liked.id) {
-      try {
-        await prisma.profileLike.create({
-          data: {
-            likerType: "USER",
-            likerId: liker.id,
-            profileType: "USER",
-            profileId: liked.id,
-          },
-        });
-        profileLikeCount++;
-      } catch (error) {
-        // Skip duplicates
-      }
-    }
-  }
-
-  // Users liking club profiles
-  for (let i = 0; i < 80; i++) {
-    const liker = allUsers[Math.floor(Math.random() * allUsers.length)];
-    const likedClub = clubs[Math.floor(Math.random() * clubs.length)];
-
-    try {
-      await prisma.profileLike.create({
-        data: {
-          likerType: "USER",
-          likerId: liker.id,
-          profileType: "CLUB",
-          profileId: likedClub.id,
-        },
-      });
-      profileLikeCount++;
-    } catch (error) {
-      // Skip duplicates
-    }
-  }
-
-  // Clubs liking user profiles (scouting, recruitment interest)
-  for (let i = 0; i < 60; i++) {
-    const likerClub = clubs[Math.floor(Math.random() * clubs.length)];
-    const likedUser = allUsers[Math.floor(Math.random() * allUsers.length)];
-
-    try {
-      await prisma.profileLike.create({
-        data: {
-          likerType: "CLUB",
-          likerId: likerClub.id,
-          profileType: "USER",
-          profileId: likedUser.id,
-        },
-      });
-      profileLikeCount++;
-    } catch (error) {
-      // Skip duplicates
-    }
-  }
-
-  // Clubs liking other club profiles (partnerships, networking)
-  for (let i = 0; i < 30; i++) {
-    const likerClub = clubs[Math.floor(Math.random() * clubs.length)];
-    const likedClub = clubs[Math.floor(Math.random() * clubs.length)];
-
-    if (likerClub.id !== likedClub.id) {
-      try {
-        await prisma.profileLike.create({
-          data: {
-            likerType: "CLUB",
-            likerId: likerClub.id,
-            profileType: "CLUB",
-            profileId: likedClub.id,
-          },
-        });
-        profileLikeCount++;
-      } catch (error) {
-        // Skip duplicates
-      }
-    }
-  }
-
-  console.log(`✅ Created ${profileLikeCount} profile likes\n`);
 
   // ========== JOB OPPORTUNITIES ==========
   console.log("💼 Creating job opportunities...");
@@ -1575,179 +1129,15 @@ async function main() {
 
   console.log(`✅ Created ${trajCount} career trajectories\n`);
 
-  // ========== STORIES ==========
-  console.log("📸 Creating hockey stories...");
-
-  // Helper function to get time offset in hours (from NOW)
-  const getDateOffset = (hoursAgo: number) => {
-    const date = new Date();
-    date.setHours(date.getHours() - hoursAgo);
-    return date;
-  };
-
-  // Helper function to get expiration time (24h from creation)
-  const getExpiresAt = (createdAt: Date) => {
-    const expiresAt = new Date(createdAt);
-    expiresAt.setHours(expiresAt.getHours() + 24);
-    return expiresAt;
-  };
-
-  const stories = [];
-
-  // Story content templates
-  const storyTexts = [
-    "Morning drills with the squad! 💪🏑",
-    "Saving every shot today! 🧤✨",
-    "Training hard for the big match! 🔥",
-    "WE DID IT! First goal of the season! 🔥🎯",
-    "Game face on! 🎯",
-    "CHAMPIONS! 🏆 Hard work pays off!",
-    "New stick, new season! ⚡",
-    "Home sweet home! Ready for tonight's match! 🏟️",
-    "One team, one dream! 💙🧡",
-    "Recovery day but still crushing it! 💯",
-    "Pre-game vibes! Let's goooo! 🚀",
-    "Best training session ever! 🙌",
-    "Feeling unstoppable today! ⚡🏑",
-    "Team bonding time! Love these people! ❤️",
-  ];
-
-  // Using Cloudinary images (same as posts) for stories
-  const imageUrls = [
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_action.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_training.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_celebration.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_goalkeeper.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_equipment.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_match.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_youth.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_stadium.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_victory.jpg",
-    "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/posts/hockey_practice.jpg",
-  ];
-
-  // ACTIVE STORIES - Create 4-5 stories for MANY different users (better carousel diversity)
-  // NOTE: All stories will be created within the last 23 hours to ensure they're ACTIVE
-
-  // Create stories for 18+ different users (4-5 stories each)
-  const usersWhoCreateStories = [
-    // Players (15 users)
-    ...players.slice(0, 15),
-    // Coaches (3 users)
-    ...coaches.slice(0, 3),
-  ];
-
-  let storyIndex = 0;
-  for (let userIdx = 0; userIdx < usersWhoCreateStories.length; userIdx++) {
-    const user = usersWhoCreateStories[userIdx];
-    const numStories = 4 + (userIdx % 2); // Alternate between 4 and 5 stories
-    // Distribute stories across the last 20 hours (to ensure ALL are active)
-    const hoursAgo = 1 + userIdx * 0.9; // Max ~17 hours ago for the last user
-
-    for (let i = 0; i < numStories; i++) {
-      const story = await prisma.story.create({
-        data: {
-          userId: user.id,
-          imageUrl: imageUrls[(storyIndex + i) % imageUrls.length],
-          text:
-            i === 0 || i === numStories - 1
-              ? storyTexts[(storyIndex + i) % storyTexts.length]
-              : null,
-          createdAt: getDateOffset(hoursAgo + i * 0.3),
-          expiresAt: getExpiresAt(getDateOffset(hoursAgo + i * 0.3)),
-        },
-      });
-      stories.push(story);
-      storyIndex++;
-    }
-  }
-
-  // Add a few text-only stories for variety (all active)
-  const textOnlyStory1 = await prisma.story.create({
-    data: {
-      userId: players[16].id,
-      text: "Big game in 2 hours. Feeling nervous but ready! Let's do this team! 🔥",
-      createdAt: getDateOffset(5),
-      expiresAt: getExpiresAt(getDateOffset(5)),
-    },
-  });
-  stories.push(textOnlyStory1);
-
-  const textOnlyStory2 = await prisma.story.create({
-    data: {
-      userId: players[17].id,
-      text: "3 hour training session ✅\nIce bath ✅\nProtein shake ✅\nRecovery mode activated 💯",
-      createdAt: getDateOffset(8),
-      expiresAt: getExpiresAt(getDateOffset(8)),
-    },
-  });
-  stories.push(textOnlyStory2);
-
-  const textOnlyStory3 = await prisma.story.create({
-    data: {
-      userId: players[18].id,
-      text: "New personal best today! 🚀⚡\nHard work pays off!",
-      createdAt: getDateOffset(12),
-      expiresAt: getExpiresAt(getDateOffset(12)),
-    },
-  });
-  stories.push(textOnlyStory3);
-
-  console.log(
-    `✅ Created ${stories.length} stories (all active, expires within 24h)\n`,
-  );
-
-  // ========== STORY VIEWS ==========
-  console.log("👁️  Creating story views...");
-
-  let viewCount = 0;
-  // Add views to active stories
-  const activeStories = stories.filter((s) => s.expiresAt > new Date());
-
-  for (const story of activeStories) {
-    // Random number of views (3-10 per story)
-    const numViews = Math.floor(Math.random() * 8) + 3;
-    const shuffledUsers = [...allUsers].sort(() => Math.random() - 0.5);
-
-    for (let i = 0; i < Math.min(numViews, shuffledUsers.length); i++) {
-      // Don't let users view their own stories
-      if (shuffledUsers[i].id !== story.userId) {
-        try {
-          await prisma.storyView.create({
-            data: {
-              storyId: story.id,
-              userId: shuffledUsers[i].id,
-              viewedAt: new Date(
-                story.createdAt.getTime() + Math.random() * 3600000,
-              ), // Random time after creation
-            },
-          });
-          viewCount++;
-        } catch (error) {
-          // Skip duplicates
-        }
-      }
-    }
-  }
-
-  console.log(`✅ Created ${viewCount} story views\n`);
-
   console.log("🎉 Database seeded successfully!\n");
   console.log("📊 Summary:");
   console.log(`   - ${clubs.length} clubs`);
   console.log(`   - ${clubAdmins.length} club admins`);
   console.log(`   - ${players.length} players`);
   console.log(`   - ${coaches.length} coaches`);
-  console.log(`   - ${posts.length} posts`);
-  console.log(`   - ${commentCount} comments`);
-  console.log(`   - ${likeCount} likes`);
-  console.log(`   - ${followCount} follows`);
-  console.log(`   - ${profileLikeCount} profile likes`);
   console.log(`   - ${jobData.length} job opportunities`);
   console.log(`   - ${statsCount} statistics records`);
-  console.log(`   - ${trajCount} career trajectories`);
-  console.log(`   - ${stories.length} stories`);
-  console.log(`   - ${viewCount} story views\n`);
+  console.log(`   - ${trajCount} career trajectories\n`);
 }
 
 main()

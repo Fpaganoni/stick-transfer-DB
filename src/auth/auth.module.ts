@@ -30,8 +30,25 @@ import { AuthController } from "./auth.controller";
   providers: [
     AuthService,
     JwtStrategy,
-    GoogleStrategy,
     PrismaService,
+    {
+      provide: GoogleStrategy,
+      useFactory: (authService: AuthService) => {
+        const clientID = process.env.GOOGLE_CLIENT_ID;
+        const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+        if (!clientID || !clientSecret) {
+          console.warn(
+            `[Auth] ⚠️  Google Sign In is DISABLED — missing env vars: GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET\n` +
+              `        Get them at: https://console.cloud.google.com → APIs & Services → Credentials`,
+          );
+          return null;
+        }
+
+        return new GoogleStrategy(authService);
+      },
+      inject: [AuthService],
+    },
     /**
      * AppleStrategy is OPTIONAL — only registered when Apple credentials are set.
      * Without APPLE_CLIENT_ID the server starts normally; Apple endpoints
