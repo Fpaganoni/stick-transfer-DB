@@ -67,7 +67,7 @@ export class AppleStrategy extends PassportStrategy(Strategy, "apple") {
     _refreshToken: string,
     idToken: any,
     profile: any,
-    done: Function,
+    done: (err: Error | null, user?: any) => void,
   ) {
     try {
       // `sub` is Apple's stable unique user identifier — always present
