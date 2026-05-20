@@ -1,3 +1,6 @@
+packages:
+  - '.'
+
 allowBuilds:
   '@apollo/protobufjs': false
   '@nestjs/core': false
