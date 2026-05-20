@@ -115,7 +115,7 @@ export class UsersResolver {
       throw new Error("Invalid file format. Only PDF files are allowed.");
     }
     try {
-      const res = await this.cloudinary.uploadPdf(base64, "cvs");
+      const res = await this.cloudinary.uploadPdf(base64, "stick-transfer/cvs");
       const url = res.secure_url || res.url;
       await this.usersService.setCv(userId, url);
       return url;
@@ -176,10 +176,12 @@ export class UsersResolver {
     @Args("city", { nullable: true }) city?: string,
     @Args("clubId", { nullable: true }) clubId?: string,
     @Args("yearsOfExperience", { nullable: true }) yearsOfExperience?: number,
-    @Args("multimedia", { type: () => [String], nullable: true }) multimedia?: string[],
+    @Args("multimedia", { type: () => [String], nullable: true })
+    multimedia?: string[],
     @Args("cvUrl", { nullable: true }) cvUrl?: string,
     @Args("statistics", { nullable: true }) statistics?: any,
-    @Args("trajectories", { type: () => [Object], nullable: true }) trajectories?: any[],
+    @Args("trajectories", { type: () => [Object], nullable: true })
+    trajectories?: any[],
   ) {
     try {
       return await this.usersService.updateUser(id, {
