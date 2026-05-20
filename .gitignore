@@ -37,7 +37,7 @@ debug.log
 Thumbs.db
 
 # 🔹 Uploaded / temp files (si usas buffers locales antes de Cloudinary/S3)
-uploads/
+/uploads/
 tmp/
 *.tmp
 
