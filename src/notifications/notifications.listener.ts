@@ -18,6 +18,6 @@ export class NotificationsListener {
   async handleClubInvite(event: NotificationEvent) {
     try {
       await this.notificationsService.createNotification(event);
-    } catch (_) {}
+    } catch {}
   }
 }
