@@ -67,3 +67,20 @@ docker-data/
 
 # 🔹 Stripe CLI Cache (si usas stripe listen)
 .stripe/
+
+# Pruebas y temporales
+test-upload.txt
+
+
+*.avif
+.tmp-logos/
+
+# Others 
+API_GUIDE.md 
+AUTH_GUIDE.md 
+FRONTEND_S3_UPLOAD_GUIDE.md 
+GRAPHQL_EXAMPLES.md 
+GRAPHQL_QUERIES_CLUBS.md 
+hockey-collection.avif 
+RoadMap.md 
+test-upload.txt 
