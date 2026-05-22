@@ -83,4 +83,10 @@ GRAPHQL_EXAMPLES.md
 GRAPHQL_QUERIES_CLUBS.md 
 hockey-collection.avif 
 RoadMap.md 
-test-upload.txt 
+.antigravitycli/
+.agents/
+.claude/
+CLAUDE.md
+COMANDS.md
+PRE-LAUNCH.md
+skills-lock.json
