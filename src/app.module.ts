@@ -18,6 +18,7 @@ import { JobsModule } from "./jobs/jobs.module";
 import { MessagingModule } from "./messaging/messaging.module";
 import { ExploreModule } from "./explore/explore.module";
 import { UploadsModule } from "./uploads/uploads.module";
+import { HealthModule } from "./health/health.module";
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { UploadsModule } from "./uploads/uploads.module";
     MessagingModule,
     ExploreModule,
     UploadsModule,
+    HealthModule,
   ],
   providers: [
     PrismaService,
