@@ -5,7 +5,7 @@
   "scripts": {
     "start": "nest start",
     "start:dev": "nest start --watch",
-    "prebuild": "rimraf dist",
+    "prebuild": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
     "build": "nest build",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
