@@ -15,9 +15,11 @@ async function bootstrap() {
   app.use(bodyParser.urlencoded({ extended: true, limit: "2mb" }));
 
   // Enable CORS for frontend dynamically
-  const allowedOrigins = process.env.FRONTEND_URL 
-    ? [process.env.FRONTEND_URL, "http://localhost:3000", "http://localhost:3001"]
-    : ["http://localhost:3000", "http://localhost:3001"];
+  const baseOrigins = ["http://localhost:3000", "http://localhost:3001"];
+  if (process.env.FRONTEND_URL) {
+    baseOrigins.push(process.env.FRONTEND_URL.replace(/\/+$/, ""));
+  }
+  const allowedOrigins = baseOrigins;
 
   app.enableCors({
     origin: allowedOrigins,

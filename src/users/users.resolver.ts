@@ -7,6 +7,7 @@ import {
   Parent,
   ID,
 } from "@nestjs/graphql";
+import { BadRequestException } from "@nestjs/common";
 import { UsersService } from "./users.service";
 import { AuthService } from "../auth/auth.service";
 import { CloudinaryService } from "../uploads/cloudinary.service";
@@ -54,7 +55,7 @@ export class UsersResolver {
       return token.access_token;
     } catch (error) {
       if (error.code === "P2002") {
-        throw new Error(`${error.meta.target[0]} already exists`);
+        throw new BadRequestException(`${error.meta.target[0]} already exists`);
       }
       throw error;
     }
@@ -203,7 +204,7 @@ export class UsersResolver {
       });
     } catch (error) {
       if (error.code === "P2002") {
-        throw new Error(`${error.meta.target[0]} already exists`);
+        throw new BadRequestException(`${error.meta.target[0]} already exists`);
       }
       throw error;
     }
