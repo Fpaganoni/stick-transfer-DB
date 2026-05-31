@@ -34,6 +34,9 @@ jobs:
 
     - name: Generate Prisma Client Types
       run: pnpm prisma generate
+      env:
+        DATABASE_URL: "postgresql://user:pass@localhost:5432/db?schema=public"
+        DIRECT_URL: "postgresql://user:pass@localhost:5432/db?schema=public"
 
     - name: Run Unit Tests with Coverage
       run: pnpm run test:cov
@@ -79,18 +82,25 @@ jobs:
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
 
-    - name: Generate Prisma Client
-      run: pnpm prisma generate
-
     - name: Mock .env for Testing
       run: |
         echo "DATABASE_URL=postgresql://cicd_admin:testpassword123@localhost:5432/hockey_test_db?schema=public" >> .env
+        echo "DIRECT_URL=postgresql://cicd_admin:testpassword123@localhost:5432/hockey_test_db?schema=public" >> .env
         echo "JWT_SECRET=super-secret-test-key-12345" >> .env
         echo "FRONTEND_URL=http://localhost:3000" >> .env
+
+    - name: Generate Prisma Client
+      run: pnpm prisma generate
+      env:
+        DATABASE_URL: "postgresql://cicd_admin:testpassword123@localhost:5432/hockey_test_db?schema=public"
+        DIRECT_URL: "postgresql://cicd_admin:testpassword123@localhost:5432/hockey_test_db?schema=public"
 
     - name: Initialize Database Schema (Push to Test DB)
       # Genera las tablas en el contenedor PostgreSQL efímero usando el schema.prisma
       run: pnpm prisma db push
+      env:
+        DATABASE_URL: "postgresql://cicd_admin:testpassword123@localhost:5432/hockey_test_db?schema=public"
+        DIRECT_URL: "postgresql://cicd_admin:testpassword123@localhost:5432/hockey_test_db?schema=public"
 
     - name: Run e2e Tests (Optional)
       # Ejecuta las pruebas contra la API Graphql simulando un cliente HTTP real
