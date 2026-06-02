@@ -13,7 +13,6 @@ async function main() {
   await prisma.conversation.deleteMany();
   await prisma.jobApplication.deleteMany();
   await prisma.jobOpportunity.deleteMany();
-  await prisma.statistics.deleteMany();
   await prisma.trajectory.deleteMany();
   await prisma.clubMember.deleteMany();
   await prisma.team.deleteMany();
@@ -864,82 +863,6 @@ async function main() {
 
   console.log(`✅ Created ${jobData.length} job opportunities\n`);
 
-  // ========== STATISTICS ==========
-  console.log("📊 Creating statistics...");
-
-  let statsCount = 0;
-
-  // Create statistics for players
-  for (let i = 0; i < players.length; i++) {
-    const player = players[i];
-    const position = player.position;
-
-    // Career stats (aggregate)
-    const careerStats = await prisma.statistics.create({
-      data: {
-        userId: player.id,
-        season: "Career",
-        gamesPlayed: 120 + Math.floor(Math.random() * 100),
-        goals:
-          position === "Forward"
-            ? 30 + Math.floor(Math.random() * 50)
-            : position === "Midfielder"
-              ? 15 + Math.floor(Math.random() * 30)
-              : position === "Defender"
-                ? 5 + Math.floor(Math.random() * 15)
-                : 0, // Goalkeeper
-        assists:
-          position === "Midfielder"
-            ? 40 + Math.floor(Math.random() * 30)
-            : position === "Forward"
-              ? 20 + Math.floor(Math.random() * 20)
-              : position === "Defender"
-                ? 10 + Math.floor(Math.random() * 15)
-                : 0, // Goalkeeper
-        points: 0, // Will be calculated
-        wins: 0,
-        losses: 0,
-        draws: 0,
-        cleanSheets:
-          position === "Goalkeeper" ? 30 + Math.floor(Math.random() * 40) : 0,
-        saves:
-          position === "Goalkeeper" ? 400 + Math.floor(Math.random() * 300) : 0,
-      },
-    });
-
-    // Update points
-    await prisma.statistics.update({
-      where: { id: careerStats.id },
-      data: { points: careerStats.goals + careerStats.assists },
-    });
-
-    statsCount += 1;
-  }
-
-  // Create statistics for coaches
-  for (const coach of coaches) {
-    // Career stats only
-    await prisma.statistics.create({
-      data: {
-        userId: coach.id,
-        season: "Career",
-        gamesPlayed: 200 + Math.floor(Math.random() * 150),
-        goals: 0,
-        assists: 0,
-        points: 0,
-        wins: 100 + Math.floor(Math.random() * 80),
-        losses: 60 + Math.floor(Math.random() * 50),
-        draws: 40 + Math.floor(Math.random() * 30),
-        cleanSheets: 0,
-        saves: 0,
-      },
-    });
-
-    statsCount += 1; // Only 1 stat record per coach now
-  }
-
-  console.log(`✅ Created ${statsCount} statistics records\n`);
-
   // ========== TRAJECTORIES ==========
   console.log("🏆 Creating career trajectories...");
 
@@ -1136,7 +1059,6 @@ async function main() {
   console.log(`   - ${players.length} players`);
   console.log(`   - ${coaches.length} coaches`);
   console.log(`   - ${jobData.length} job opportunities`);
-  console.log(`   - ${statsCount} statistics records`);
   console.log(`   - ${trajCount} career trajectories\n`);
 }
 

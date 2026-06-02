@@ -22,7 +22,6 @@ type User {
   isActive: Boolean!
   createdAt: String!
   updatedAt: String!
-  statistics: Statistics
   trajectories: [Trajectory!]!
 }
 
@@ -123,18 +122,6 @@ type Trajectory {
   club: Club
 }
 
-input StatisticsInput {
-  gamesPlayed: Int
-  goals: Int
-  assists: Int
-  points: Int
-  wins: Int
-  losses: Int
-  draws: Int
-  cleanSheets: Int
-  saves: Int
-}
-
 input TrajectoryInput {
   id: ID
   clubId: ID
@@ -146,26 +133,6 @@ input TrajectoryInput {
   endDate: String
   isCurrent: Boolean
   order: Int
-}
-
-type Statistics {
-  id: ID!
-  userId: ID!
-  clubId: ID
-  season: String!
-  gamesPlayed: Int!
-  goals: Int!
-  assists: Int!
-  points: Int!
-  wins: Int!
-  losses: Int!
-  draws: Int!
-  cleanSheets: Int!
-  saves: Int!
-  createdAt: String!
-  updatedAt: String!
-  user: User!
-  club: Club
 }
 
 type Conversation {
@@ -317,7 +284,6 @@ type Mutation {
     yearsOfExperience: Int
     multimedia: [String!]
     cvUrl: String
-    statistics: StatisticsInput
     trajectories: [TrajectoryInput!]
   ): User!
 

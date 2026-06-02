@@ -10,11 +10,6 @@ const mockPrismaService = {
     findMany: jest.fn(),
     update: jest.fn(),
   },
-  statistics: {
-    findFirst: jest.fn(),
-    create: jest.fn(),
-    update: jest.fn(),
-  },
   trajectory: {
     deleteMany: jest.fn(),
     createMany: jest.fn(),
@@ -196,40 +191,6 @@ describe("UsersService", () => {
       expect(result).toEqual(mockUser);
     });
 
-    it("debería actualizar estadísticas cuando existen", async () => {
-      const mockUser = { id: "user-1", name: "Lucía" };
-      const mockStats = { id: "stats-1", userId: "user-1", season: "Career" };
-
-      prisma.user.update.mockResolvedValue(mockUser);
-      prisma.statistics.findFirst.mockResolvedValue(mockStats);
-      prisma.statistics.update.mockResolvedValue({});
-
-      await service.updateUser("user-1", {
-        bio: "Test",
-        statistics: { goals: 10 },
-      });
-
-      expect(prisma.statistics.update).toHaveBeenCalledWith({
-        where: { id: "stats-1" },
-        data: { goals: 10 },
-      });
-    });
-
-    it("debería crear estadísticas si no existen aún", async () => {
-      const mockUser = { id: "user-1" };
-
-      prisma.user.update.mockResolvedValue(mockUser);
-      prisma.statistics.findFirst.mockResolvedValue(null);
-      prisma.statistics.create.mockResolvedValue({});
-
-      await service.updateUser("user-1", {
-        statistics: { goals: 5 },
-      });
-
-      expect(prisma.statistics.create).toHaveBeenCalledWith({
-        data: { goals: 5, userId: "user-1", season: "Career" },
-      });
-    });
     it("debería actualizar trayectorias (borrado y recreado)", async () => {
       const mockUser = { id: "user-1" };
       prisma.user.update.mockResolvedValue(mockUser);

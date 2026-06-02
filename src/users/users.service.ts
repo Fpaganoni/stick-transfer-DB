@@ -100,38 +100,16 @@ export class UsersService {
       yearsOfExperience?: number;
       cvUrl?: string;
       multimedia?: string[];
-      statistics?: any;
       username?: string;
       trajectories?: any[];
     },
   ) {
-    const { statistics, trajectories, ...userUpdateData } = data;
+    const { trajectories, ...userUpdateData } = data;
 
     const updatedUser = await this.prisma.user.update({
       where: { id },
       data: userUpdateData,
     });
-
-    if (statistics) {
-      const careerStats = await this.prisma.statistics.findFirst({
-        where: { userId: id, season: "Career" },
-      });
-
-      if (careerStats) {
-        await this.prisma.statistics.update({
-          where: { id: careerStats.id },
-          data: statistics,
-        });
-      } else {
-        await this.prisma.statistics.create({
-          data: {
-            ...statistics,
-            userId: id,
-            season: "Career",
-          },
-        });
-      }
-    }
 
     if (trajectories) {
       // Logic to sync trajectories: Full replacement for profile sync

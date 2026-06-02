@@ -56,7 +56,6 @@ model User {
 
   // Career & Stats
   trajectories Trajectory[] @relation("UserTrajectories")
-  statistics   Statistics[] @relation("UserStatistics")
 
   // Email verification
   emailVerificationTokens EmailVerificationToken[] @relation("UserVerificationTokens")
@@ -112,7 +111,6 @@ model Club {
   teams            Team[]
   jobOpportunities JobOpportunity[]
   trajectories     Trajectory[]     @relation("ClubTrajectories")
-  statistics       Statistics[]     @relation("ClubStatistics")
 
   @@index([name])
   @@index([country, city])
@@ -217,32 +215,6 @@ model Trajectory {
   @@index([userId])
   @@index([clubId])
   @@index([isCurrent])
-}
-
-model Statistics {
-  id          String   @id @default(uuid())
-  userId      String
-  clubId      String?
-  season      String
-  gamesPlayed Int      @default(0)
-  goals       Int      @default(0)
-  assists     Int      @default(0)
-  points      Int      @default(0)
-  wins        Int      @default(0)
-  losses      Int      @default(0)
-  draws       Int      @default(0)
-  cleanSheets Int      @default(0)
-  saves       Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  user User  @relation("UserStatistics", fields: [userId], references: [id], onDelete: Cascade)
-  club Club? @relation("ClubStatistics", fields: [clubId], references: [id], onDelete: SetNull)
-
-  @@unique([userId, season, clubId])
-  @@index([userId])
-  @@index([clubId])
-  @@index([season])
 }
 
 model Conversation {

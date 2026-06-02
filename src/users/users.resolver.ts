@@ -180,7 +180,6 @@ export class UsersResolver {
     @Args("multimedia", { type: () => [String], nullable: true })
     multimedia?: string[],
     @Args("cvUrl", { nullable: true }) cvUrl?: string,
-    @Args("statistics", { nullable: true }) statistics?: any,
     @Args("trajectories", { type: () => [Object], nullable: true })
     trajectories?: any[],
   ) {
@@ -199,7 +198,6 @@ export class UsersResolver {
         yearsOfExperience,
         multimedia,
         cvUrl,
-        statistics,
         trajectories,
       });
     } catch (error) {
@@ -208,23 +206,6 @@ export class UsersResolver {
       }
       throw error;
     }
-  }
-
-  // Field resolver for statistics - returns aggregated career stats
-  @ResolveField()
-  async statistics(@Parent() user: any) {
-    const { id } = user;
-
-    // Get the "Career" statistics record which contains aggregated totals
-    const careerStats = await this.prisma.statistics.findFirst({
-      where: {
-        userId: id,
-        season: "Career",
-      },
-      include: { club: true },
-    });
-
-    return careerStats;
   }
 
   // Field resolver for trajectories
