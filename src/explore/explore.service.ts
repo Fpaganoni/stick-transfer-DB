@@ -42,8 +42,8 @@ export class ExploreService {
     // Role filter — normalize to uppercase, validate against allowed enum values
     if (role) {
       const normalizedRole = role.toUpperCase();
-      if (!["PLAYER", "COACH", "CLUB_ADMIN"].includes(normalizedRole)) {
-        throw new Error("Invalid role. Allowed: PLAYER, COACH, CLUB_ADMIN");
+      if (!["PLAYER", "COACH", "CLUB"].includes(normalizedRole)) {
+        throw new Error("Invalid role. Allowed: PLAYER, COACH, CLUB");
       }
       where.role = normalizedRole;
     }

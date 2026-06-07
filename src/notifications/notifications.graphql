@@ -2,6 +2,9 @@ enum NotificationType {
   CLUB_INVITE
   CLUB_ACCEPT
   JOB_APPLICATION_UPDATE
+  NEW_FOLLOWER
+  NEW_LIKE
+  APPLICATION_RECEIVED
 }
 
 type Notification {

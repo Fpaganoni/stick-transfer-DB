@@ -28,6 +28,8 @@ model User {
   yearsOfExperience     Int?
   cvUrl                 String?
   multimedia            String[]
+  dateOfBirth           DateTime?
+  level                 UserLevel?
   isVerified            Boolean      @default(false)
   isEmailVerified       Boolean      @default(false)
   isActive              Boolean      @default(true)
@@ -64,6 +66,17 @@ model User {
   notificationsReceived Notification[] @relation("NotificationsReceived")
   notificationsSent     Notification[] @relation("NotificationsSent")
 
+  // Saved jobs
+  savedJobs SavedJob[] @relation("UserSavedJobs")
+
+  // Follows
+  following Follow[] @relation("FollowerUser")
+  followers Follow[] @relation("FollowedUser")
+
+  // Likes
+  likesGiven    Like[] @relation("LikerUser")
+  likesReceived Like[] @relation("LikedUser")
+
   @@index([email])
   @@index([username])
   @@index([clubId])
@@ -97,8 +110,9 @@ model Club {
   verificationStatus VerificationStatus @default(UNVERIFIED)
   verificationDoc    String?
   benefits           String[]           @default([])
+  videos             String[]           @default([])
 
-  /// The User (with role CLUB_ADMIN) who manages this club.
+  /// The User (with role CLUB) who manages this club.
   adminId   String?  @unique
   admin     User?    @relation("ClubAdmin", fields: [adminId], references: [id], onDelete: SetNull)
 
@@ -111,6 +125,9 @@ model Club {
   teams            Team[]
   jobOpportunities JobOpportunity[]
   trajectories     Trajectory[]     @relation("ClubTrajectories")
+
+  followers Follow[] @relation("FollowedClub")
+  likes     Like[]   @relation("LikedClub")
 
   @@index([name])
   @@index([country, city])
@@ -162,11 +179,15 @@ model JobOpportunity {
   currency     Currency?
   benefits     String?      @db.Text
   status       JobStatus    @default(OPEN)
+  gender       Gender?
+  expiresAt    DateTime?
+  division     String?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
   club         Club             @relation(fields: [clubId], references: [id], onDelete: Cascade)
   applications JobApplication[]
+  savedBy      SavedJob[]       @relation("SavedJobOpportunity")
 
   @@index([clubId])
   @@index([status, positionType])
@@ -288,6 +309,9 @@ enum NotificationType {
   CLUB_INVITE
   CLUB_ACCEPT
   JOB_APPLICATION_UPDATE
+  NEW_FOLLOWER
+  NEW_LIKE
+  APPLICATION_RECEIVED
 }
 
 model Notification {
@@ -306,17 +330,120 @@ model Notification {
   @@index([recipientId, createdAt])
 }
 
+model SavedJob {
+  id               String   @id @default(uuid())
+  userId           String
+  jobOpportunityId String
+  savedAt          DateTime @default(now())
+
+  user           User           @relation("UserSavedJobs", fields: [userId], references: [id], onDelete: Cascade)
+  jobOpportunity JobOpportunity @relation("SavedJobOpportunity", fields: [jobOpportunityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, jobOpportunityId])
+  @@index([userId])
+  @@index([jobOpportunityId])
+}
+
+model Follow {
+  id            String           @id @default(uuid())
+  followerId    String
+  followerType  FollowEntityType
+  followingId   String
+  followingType FollowEntityType
+  createdAt     DateTime         @default(now())
+
+  followerUser User? @relation("FollowerUser", fields: [followerId], references: [id], onDelete: Cascade, map: "Follow_followerUser_fkey")
+  followedUser User? @relation("FollowedUser", fields: [followingId], references: [id], onDelete: Cascade, map: "Follow_followedUser_fkey")
+  followedClub Club? @relation("FollowedClub", fields: [followingId], references: [id], onDelete: Cascade, map: "Follow_followedClub_fkey")
+
+  @@unique([followerId, followerType, followingId, followingType])
+  @@index([followerId, followerType])
+  @@index([followingId, followingType])
+}
+
+/// Bidirectional profile likes between Player/Coach/Club profiles.
+model Like {
+  id        String         @id @default(uuid())
+  likerId   String
+  likerType LikeEntityType
+  likedId   String
+  likedType LikeEntityType
+  createdAt DateTime       @default(now())
+
+  likerUser User? @relation("LikerUser", fields: [likerId], references: [id], onDelete: Cascade, map: "Like_likerUser_fkey")
+  likedUser User? @relation("LikedUser", fields: [likedId], references: [id], onDelete: Cascade, map: "Like_likedUser_fkey")
+  likedClub Club? @relation("LikedClub", fields: [likedId], references: [id], onDelete: Cascade, map: "Like_likedClub_fkey")
+
+  @@unique([likerId, likerType, likedId, likedType])
+  @@index([likerId, likerType])
+  @@index([likedId, likedType])
+}
+
+model NewsArticle {
+  id                 String       @id @default(uuid())
+  slug               String       @unique
+  title              String
+  excerpt            String       @db.Text
+  content            String       @db.Text
+  coverImage         String?
+  category           NewsCategory
+  publishedAt        DateTime?
+  readingTimeMinutes Int?
+  authorName         String?
+  authorAvatar       String?
+  relatedSlugs       String[]     @default([])
+  isPublished        Boolean      @default(false)
+  createdById        String
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([slug])
+  @@index([category, isPublished])
+  @@index([publishedAt(sort: Desc)])
+}
+
 enum Role {
   PLAYER
   COACH
-  CLUB_ADMIN
+  CLUB
   SUPERADMIN
 }
 
 enum AuthProvider {
   EMAIL
   GOOGLE
-  APPLE
+  FACEBOOK
+  LINKEDIN
+  TWITTER
+}
+
+enum UserLevel {
+  PROFESSIONAL
+  AMATEUR
+}
+
+enum Gender {
+  MEN
+  WOMEN
+  MIXED
+}
+
+enum NewsCategory {
+  INTERNATIONAL
+  NATIONAL
+  TRANSFERS
+  EQUIPMENT
+  RESULTS
+}
+
+enum FollowEntityType {
+  USER
+  CLUB
+}
+
+enum LikeEntityType {
+  USER
+  CLUB
 }
 
 enum ClubRole {

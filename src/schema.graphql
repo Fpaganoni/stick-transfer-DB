@@ -16,13 +16,20 @@ type User {
   yearsOfExperience: Int
   cvUrl: String
   multimedia: [String!]!
-  level: String!
+  dateOfBirth: String
+  level: UserLevel
   isVerified: Boolean!
   isEmailVerified: Boolean!
   isActive: Boolean!
   createdAt: String!
   updatedAt: String!
   trajectories: [Trajectory!]!
+  savedJobs: [JobOpportunity!]!
+  followersCount: Int!
+  followingCount: Int!
+  likesReceivedCount: Int!
+  isFollowedByCurrentUser: Boolean!
+  isLikedByCurrentUser: Boolean!
 }
 
 type Club {
@@ -48,11 +55,16 @@ type Club {
   verificationStatus: String!
   verificationDoc: String
   benefits: [String!]!
+  videos: [String!]!
   adminId: ID
   admin: User
   members: [ClubMember!]!
   createdAt: String!
   updatedAt: String!
+  followersCount: Int!
+  likesReceivedCount: Int!
+  isFollowedByCurrentUser: Boolean!
+  isLikedByCurrentUser: Boolean!
 }
 
 type Team {
@@ -85,7 +97,11 @@ type JobOpportunity {
   currency: String
   benefits: String
   status: String!
+  gender: Gender
+  expiresAt: String
+  division: String
   applications: [JobApplication!]!
+  isSavedByCurrentUser: Boolean!
   createdAt: String!
 }
 
@@ -175,7 +191,7 @@ type PaymentIntent {
   clientSecret: String
 }
 
-"""A view that pairs each Club with its CLUB_ADMIN user."""
+"""A view that pairs each Club with its CLUB user."""
 type ClubAdminView {
   clubId: ID!
   clubName: String!
@@ -197,6 +213,150 @@ type S3PresignedUrl {
   finalUrl: String!
 }
 
+enum UserLevel {
+  PROFESSIONAL
+  AMATEUR
+}
+
+enum Gender {
+  MEN
+  WOMEN
+  MIXED
+}
+
+enum NewsCategory {
+  INTERNATIONAL
+  NATIONAL
+  TRANSFERS
+  EQUIPMENT
+  RESULTS
+}
+
+enum FollowEntityType {
+  USER
+  CLUB
+}
+
+enum LikeEntityType {
+  USER
+  CLUB
+}
+
+enum OAuthProvider {
+  GOOGLE
+  FACEBOOK
+  LINKEDIN
+  TWITTER
+}
+
+type Follow {
+  id: ID!
+  followerType: FollowEntityType!
+  followerId: ID!
+  followingType: FollowEntityType!
+  followingId: ID!
+  createdAt: String!
+}
+
+type Like {
+  id: ID!
+  likerType: LikeEntityType!
+  likerId: ID!
+  likedType: LikeEntityType!
+  likedId: ID!
+  createdAt: String!
+}
+
+type NewsAuthor {
+  name: String!
+  avatar: String
+}
+
+type NewsArticleSummary {
+  id: ID!
+  slug: String!
+  title: String!
+  coverImage: String
+  category: NewsCategory!
+  publishedAt: String
+}
+
+type NewsArticle {
+  id: ID!
+  slug: String!
+  title: String!
+  excerpt: String!
+  content: String!
+  coverImage: String
+  category: NewsCategory!
+  publishedAt: String
+  readingTimeMinutes: Int
+  isPublished: Boolean!
+  author: NewsAuthor!
+  relatedArticles: [NewsArticleSummary!]!
+}
+
+type NewsPaginatedResult {
+  items: [NewsArticle!]!
+  total: Int!
+  hasMore: Boolean!
+}
+
+type ApplicationWithUser {
+  id: ID!
+  userId: ID!
+  status: String!
+  coverLetter: String
+  resumeUrl: String
+  appliedAt: String!
+  updatedAt: String!
+  reviewedAt: String
+  notes: String
+  user: User!
+  jobOpportunity: JobOpportunity!
+}
+
+input JobOpportunityFiltersInput {
+  country: String
+  positionType: String
+  level: String
+  gender: Gender
+  search: String
+  clubId: ID
+  status: String
+  division: String
+  expiresAfter: String
+}
+
+input NewsFiltersInput {
+  category: NewsCategory
+  search: String
+}
+
+input NewsArticleInput {
+  slug: String!
+  title: String!
+  excerpt: String!
+  content: String!
+  coverImage: String
+  category: NewsCategory!
+  publishedAt: String
+  readingTimeMinutes: Int
+  authorName: String
+  authorAvatar: String
+  relatedSlugs: [String!]
+}
+
+input NewsArticleUpdateInput {
+  title: String
+  excerpt: String
+  content: String
+  coverImage: String
+  category: NewsCategory
+  readingTimeMinutes: Int
+  relatedSlugs: [String!]
+}
+
 type Query {
   # Users
   users: [User!]!
@@ -214,18 +374,34 @@ type Query {
 
   # Job Opportunities
   jobOpportunities(
-    positionType: String
-    level: String
-    country: String
-    city: String
-    status: String
+    filters: JobOpportunityFiltersInput
+    page: Int
+    limit: Int
   ): [JobOpportunity!]!
   jobOpportunity(id: String!): JobOpportunity
+  savedJobOpportunities: [JobOpportunity!]!
 
   # Job Applications
   jobApplications(jobOpportunityId: String!, status: String): [JobApplication!]!
   userApplications(userId: String!, status: String): [JobApplication!]!
   jobApplication(id: String!): JobApplication
+  getClubApplications(
+    clubId: ID!
+    status: String
+    page: Int
+    limit: Int
+  ): [ApplicationWithUser!]!
+
+  # Follows & Likes
+  followers(entityType: FollowEntityType!, entityId: ID!): [Follow!]!
+  following(entityType: FollowEntityType!, entityId: ID!): [Follow!]!
+  profileLikes(entityType: LikeEntityType!, entityId: ID!): [Like!]!
+  likesGiven(entityType: LikeEntityType!, entityId: ID!): [Like!]!
+
+  # News
+  news(filters: NewsFiltersInput, page: Int, limit: Int): NewsPaginatedResult!
+  newsArticle(slug: String!): NewsArticle
+  superAdminNewsArticles(filters: NewsFiltersInput, page: Int, limit: Int): NewsPaginatedResult!
 
   # Messaging
   myConversations(userId: String!): [Conversation!]!
@@ -263,6 +439,11 @@ type Mutation {
     username: String
     password: String!
     role: String
+    country: String
+    city: String
+    position: String
+    dateOfBirth: String
+    clubName: String
   ): String!
   login(email: String!, password: String!): String!
   uploadAvatar(userId: ID!, base64: String!): Boolean!
@@ -284,6 +465,8 @@ type Mutation {
     yearsOfExperience: Int
     multimedia: [String!]
     cvUrl: String
+    dateOfBirth: String
+    level: UserLevel
     trajectories: [TrajectoryInput!]
   ): User!
 
@@ -326,6 +509,7 @@ type Mutation {
     facebook: String
     tiktok: String
     benefits: [String!]
+    videos: [String!]
   ): Club!
   requestClubVerification(clubId: ID!, documentUrl: String!): Club!
   uploadClubLogo(clubId: ID!, base64: String!): Boolean!
@@ -343,9 +527,14 @@ type Mutation {
     salary: Float
     currency: String
     benefits: String
+    gender: Gender
+    expiresAt: String
+    division: String
   ): JobOpportunity!
   updateJobOpportunity(id: String!, status: String): JobOpportunity!
   deleteJobOpportunity(id: String!): Boolean!
+  saveJobOpportunity(jobOpportunityId: ID!): Boolean!
+  unsaveJobOpportunity(jobOpportunityId: ID!): Boolean!
 
   # Job Applications
   applyForJob(
@@ -355,12 +544,46 @@ type Mutation {
     resumeUrl: String
   ): JobApplication!
   updateApplicationStatus(
-    id: String!
+    applicationId: ID!
     status: String!
-    reviewedBy: String
     notes: String
   ): JobApplication!
   withdrawApplication(id: String!, userId: String!): JobApplication!
+
+  # Follows
+  follow(
+    followerType: FollowEntityType!
+    followerId: ID!
+    followingType: FollowEntityType!
+    followingId: ID!
+  ): Follow!
+  unfollow(
+    followerType: FollowEntityType!
+    followerId: ID!
+    followingType: FollowEntityType!
+    followingId: ID!
+  ): Boolean!
+
+  # Likes
+  likeProfile(
+    likerType: LikeEntityType!
+    likerId: ID!
+    likedType: LikeEntityType!
+    likedId: ID!
+  ): Like!
+  unlikeProfile(
+    likerType: LikeEntityType!
+    likerId: ID!
+    likedType: LikeEntityType!
+    likedId: ID!
+  ): Boolean!
+
+  # News (Super Admin only)
+  createNewsArticle(input: NewsArticleInput!): NewsArticle!
+  updateNewsArticle(id: ID!, input: NewsArticleUpdateInput!): NewsArticle!
+  deleteNewsArticle(id: ID!): Boolean!
+  publishNewsArticle(id: ID!): NewsArticle!
+  unpublishNewsArticle(id: ID!): NewsArticle!
 
   # Messaging
   startConversation(participantIds: [String!]!): Conversation!

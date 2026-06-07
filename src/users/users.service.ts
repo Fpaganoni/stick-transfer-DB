@@ -12,6 +12,10 @@ export class UsersService {
     username?: string;
     password?: string;
     role?: string;
+    country?: string;
+    city?: string;
+    position?: string;
+    dateOfBirth?: string;
   }) {
     const hashed = data.password
       ? await bcrypt.hash(data.password, 10)
@@ -23,6 +27,10 @@ export class UsersService {
         username: data.username,
         password: hashed,
         role: data.role as any,
+        country: data.country,
+        city: data.city,
+        position: data.position as any,
+        dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
       },
     });
   }
@@ -101,14 +109,20 @@ export class UsersService {
       cvUrl?: string;
       multimedia?: string[];
       username?: string;
+      dateOfBirth?: string;
+      level?: string;
       trajectories?: any[];
     },
   ) {
-    const { trajectories, ...userUpdateData } = data;
+    const { trajectories, dateOfBirth, level, ...userUpdateData } = data;
 
     const updatedUser = await this.prisma.user.update({
       where: { id },
-      data: userUpdateData,
+      data: {
+        ...userUpdateData,
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+        level: level as any,
+      },
     });
 
     if (trajectories) {

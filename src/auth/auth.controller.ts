@@ -1,13 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Req,
-  Res,
-  UseGuards,
-  HttpCode,
-  HttpStatus,
-} from "@nestjs/common";
+import { Controller, Get, Req, Res, UseGuards } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
 
 /**
@@ -21,8 +12,6 @@ import { AuthGuard } from "@nestjs/passport";
  * Routes:
  *  GET  /auth/google           — Initiates Google OAuth2 flow (browser redirect)
  *  GET  /auth/google/callback  — Google redirects here after user consents
- *  POST /auth/apple            — Initiates Apple Sign In flow
- *  POST /auth/apple/callback   — Apple POSTs here after user authenticates
  *
  * After successful OAuth, the user is redirected to /oauth-redirect?token=<JWT>
  * The frontend reads the token from the query param and stores it for API calls.
@@ -53,42 +42,6 @@ export class AuthController {
     const token = (req.user as any)?.access_token ?? null;
     // Redirect to the Next.js frontend OAuth landing page with the JWT.
     // Frontend route: http://localhost:3000/oauth-redirect (app/[locale]/oauth-redirect/page.tsx)
-    res.redirect(
-      `${process.env.FRONTEND_URL || "http://localhost:3000"}/oauth-redirect?token=${token}`,
-    );
-  }
-
-  // ─── Apple ─────────────────────────────────────────────────────────────────
-
-  /**
-   * Initiates the Apple Sign In flow.
-   * Apple requires a POST request (per Apple's OAuth spec) — unlike Google which uses GET.
-   * Passport handles the redirect to Apple's signin page automatically.
-   *
-   * ⚠️  Apple requires HTTPS for the callback URL. Use ngrok for local development.
-   */
-  @Post("apple")
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(AuthGuard("apple"))
-  async appleAuth() {
-    // Passport redirects to Apple — no body needed.
-  }
-
-  /**
-   * Apple Sign In callback endpoint.
-   * Apple POSTs here (not GET) after authentication, which is why this is a @Post.
-   * Passport validates the posted id_token, calls AppleStrategy.validate(), and
-   * attaches the JWT result to req.user before reaching this handler.
-   *
-   * ⚠️  APPLE QUIRK: Apple only includes name and email in the POST body on the
-   *     VERY FIRST login. On subsequent logins only the `code` is sent.
-   *     AppleStrategy handles this transparently via the stored socialId.
-   */
-  @Post("apple/callback")
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(AuthGuard("apple"))
-  async appleAuthRedirect(@Req() req: any, @Res() res: any) {
-    const token = (req.user as any)?.access_token ?? null;
     res.redirect(
       `${process.env.FRONTEND_URL || "http://localhost:3000"}/oauth-redirect?token=${token}`,
     );

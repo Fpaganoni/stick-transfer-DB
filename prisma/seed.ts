@@ -6,18 +6,26 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("🌱 Starting database seed...\n");
 
-  // Clear existing data
+  // Clear existing data (children before parents to satisfy FK constraints)
   console.log("🗑️  Clearing existing data...");
-  await prisma.message.deleteMany();
-  await prisma.conversationParticipant.deleteMany();
-  await prisma.conversation.deleteMany();
-  await prisma.jobApplication.deleteMany();
-  await prisma.jobOpportunity.deleteMany();
-  await prisma.trajectory.deleteMany();
-  await prisma.clubMember.deleteMany();
-  await prisma.team.deleteMany();
-  await prisma.club.deleteMany();
-  await prisma.user.deleteMany();
+  await prisma.$transaction([
+    prisma.notification.deleteMany(),
+    prisma.emailVerificationToken.deleteMany(),
+    prisma.message.deleteMany(),
+    prisma.conversationParticipant.deleteMany(),
+    prisma.conversation.deleteMany(),
+    prisma.savedJob.deleteMany(),
+    prisma.jobApplication.deleteMany(),
+    prisma.jobOpportunity.deleteMany(),
+    prisma.follow.deleteMany(),
+    prisma.like.deleteMany(),
+    prisma.newsArticle.deleteMany(),
+    prisma.trajectory.deleteMany(),
+    prisma.clubMember.deleteMany(),
+    prisma.team.deleteMany(),
+    prisma.club.deleteMany(),
+    prisma.user.deleteMany(),
+  ]);
   console.log("✅ Data cleared\n");
 
   // Hash password for all mock users
@@ -474,6 +482,19 @@ async function main() {
     return femaleNames.includes(firstName) ? "female" : "male";
   };
 
+  // Helper to generate a realistic date of birth for a given age range
+  const randomDateOfBirth = (minAge: number, maxAge: number): Date => {
+    const age = minAge + Math.floor(Math.random() * (maxAge - minAge + 1));
+    const year = new Date().getFullYear() - age;
+    const month = Math.floor(Math.random() * 12);
+    const day = 1 + Math.floor(Math.random() * 28);
+    return new Date(year, month, day);
+  };
+
+  // Helper to derive level from years of experience (PROFESSIONAL: >=5 years)
+  const levelFromExperience = (yearsOfExperience: number): "PROFESSIONAL" | "AMATEUR" =>
+    yearsOfExperience >= 5 ? "PROFESSIONAL" : "AMATEUR";
+
   const players = [];
   for (let index = 0; index < playerData.length; index++) {
     const player = playerData[index];
@@ -481,6 +502,7 @@ async function main() {
     const genderPath = gender === "female" ? "women" : "men";
     const imageNumber = index % 80;
 
+    const yearsOfExperience = index % 2 === 0 ? 3 : 8; // Half Amateur (<5), half Professional (>=5)
     const p = await prisma.user.create({
       data: {
         email: player.email,
@@ -493,7 +515,9 @@ async function main() {
         avatar: `https://randomuser.me/api/portraits/${genderPath}/${imageNumber}.jpg`,
         country: player.country,
         city: player.city,
-        yearsOfExperience: index % 2 === 0 ? 3 : 8, // Half Amateur (<5), half Professional (>=5)
+        dateOfBirth: randomDateOfBirth(18, 32),
+        level: levelFromExperience(yearsOfExperience),
+        yearsOfExperience,
         isVerified: index % 4 === 0,
         isEmailVerified: index % 3 === 0, // ~33% have verified emails
       },
@@ -572,6 +596,7 @@ async function main() {
     const genderPath = gender === "female" ? "women" : "men";
     const imageNumber = (index + 25) % 80;
 
+    const yearsOfExperience = 10 + index; // All coaches are Professional (>=5)
     const c = await prisma.user.create({
       data: {
         email: coach.email,
@@ -585,7 +610,9 @@ async function main() {
         avatar: `https://randomuser.me/api/portraits/${genderPath}/${imageNumber}.jpg`,
         country: coach.country,
         city: coach.city,
-        yearsOfExperience: 10 + index, // All coaches are Professional (>=5)
+        dateOfBirth: randomDateOfBirth(35, 58),
+        level: levelFromExperience(yearsOfExperience),
+        yearsOfExperience,
         isVerified: index % 2 === 0,
         isEmailVerified: index % 2 === 0, // 50% have verified emails
       },
@@ -595,10 +622,10 @@ async function main() {
 
   console.log(`✅ Created ${coaches.length} coaches\n`);
 
-  // ========== CLUB ADMINS ==========
-  console.log("🔑 Creating club admin users...");
+  // ========== CLUB USERS (role: CLUB) ==========
+  console.log("🔑 Creating club users...");
 
-  const clubAdminData = [
+  const clubUserData = [
     // Spanish clubs admins
     {
       username: "admin_campo_madrid",
@@ -688,29 +715,54 @@ async function main() {
     },
   ];
 
-  const clubAdmins = [];
-  for (let index = 0; index < clubAdminData.length; index++) {
-    const admin = clubAdminData[index];
-    const ad = await prisma.user.create({
+  const clubUsers = [];
+  for (let index = 0; index < clubUserData.length; index++) {
+    const clubUser = clubUserData[index];
+    const gender = getGenderFromName(clubUser.name);
+    const genderPath = gender === "female" ? "women" : "men";
+    const cu = await prisma.user.create({
       data: {
-        email: admin.email,
-        username: admin.username,
-        name: admin.name,
+        email: clubUser.email,
+        username: clubUser.username,
+        name: clubUser.name,
         password: hashedPassword,
-        role: "CLUB_ADMIN",
-        bio: `Club Administrator with passion for field hockey. Managing and growing the club every day! 🏑`,
-        avatar: `https://randomuser.me/api/portraits/men/${50 + index}.jpg`,
-        country: admin.country,
-        city: admin.city,
-        yearsOfExperience: 15, // Club admins are Professional by default
+        role: "CLUB",
+        bio: `Club administrator with passion for field hockey. Managing and growing the club every day! 🏑`,
+        avatar: `https://randomuser.me/api/portraits/${genderPath}/${50 + index}.jpg`,
+        country: clubUser.country,
+        city: clubUser.city,
+        dateOfBirth: randomDateOfBirth(35, 60),
+        level: "PROFESSIONAL",
+        yearsOfExperience: 15, // Club users are Professional by default
         isVerified: true,
         isEmailVerified: true,
       },
     });
-    clubAdmins.push(ad);
+    clubUsers.push(cu);
   }
 
-  console.log(`✅ Created ${clubAdmins.length} club admins\n`);
+  console.log(`✅ Created ${clubUsers.length} club users\n`);
+
+  // ========== SUPERADMIN ==========
+  console.log("🛡️  Creating super admin...");
+
+  const superAdmin = await prisma.user.create({
+    data: {
+      email: "superadmin@hockey-test.com",
+      username: "superadmin",
+      name: "Hockey Connect Admin",
+      password: hashedPassword,
+      role: "SUPERADMIN",
+      bio: "Platform administrator.",
+      avatar: `https://randomuser.me/api/portraits/lego/1.jpg`,
+      country: "🇪🇸",
+      city: "Madrid",
+      isVerified: true,
+      isEmailVerified: true,
+    },
+  });
+
+  console.log(`✅ Created super admin: ${superAdmin.email}\n`);
 
   // ========== ASSIGN ADMINS, POPULATE CLUBS & ASSIGN MEMBERS ==========
   console.log(
@@ -722,7 +774,7 @@ async function main() {
     await prisma.club.update({
       where: { id: club.id },
       data: {
-        adminId: clubAdmins[index % clubAdmins.length].id,
+        adminId: clubUsers[index % clubUsers.length].id,
         email:
           club.email ||
           `contact@${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}.com`,
@@ -748,7 +800,7 @@ async function main() {
   }
 
   const clubMembersCreated = [];
-  const allMembers = [...players, ...coaches, ...clubAdmins];
+  const allMembers = [...players, ...coaches, ...clubUsers];
   for (let index = 0; index < allMembers.length; index++) {
     const user = allMembers[index];
     const club = clubs[index % clubs.length];
@@ -758,14 +810,14 @@ async function main() {
         userId: user.id,
         roleInClub: user.role === "COACH" ? "COACH" : "MEMBER",
         status: "ACTIVE",
-        invitedById: clubAdmins[index % clubAdmins.length].id,
+        invitedById: clubUsers[index % clubUsers.length].id,
       },
     });
     clubMembersCreated.push(cm);
   }
 
   console.log(
-    `✅ Each club now has a dedicated CLUB_ADMIN and fully populated data`,
+    `✅ Each club now has a dedicated CLUB user as admin and fully populated data`,
   );
   console.log(`✅ Created ${clubMembersCreated.length} club members\n`);
 
@@ -1055,7 +1107,8 @@ async function main() {
   console.log("🎉 Database seeded successfully!\n");
   console.log("📊 Summary:");
   console.log(`   - ${clubs.length} clubs`);
-  console.log(`   - ${clubAdmins.length} club admins`);
+  console.log(`   - ${clubUsers.length} club users (role CLUB)`);
+  console.log(`   - 1 super admin`);
   console.log(`   - ${players.length} players`);
   console.log(`   - ${coaches.length} coaches`);
   console.log(`   - ${jobData.length} job opportunities`);

@@ -5,7 +5,7 @@ NestJS + GraphQL + Prisma backend for **Stick Transfer**, a hockey talent market
 Stack:
 - NestJS + GraphQL (Apollo)
 - Prisma + PostgreSQL
-- JWT + OAuth 2.0 (Google, Apple)
+- JWT + OAuth 2.0 (Google)
 - WebSocket notifications (Socket.IO)
 - Cloudinary + AWS S3 for file uploads
 - Stripe for payments
@@ -25,7 +25,7 @@ Stack:
 
 | Module | Purpose |
 |--------|---------|
-| **auth** | JWT + OAuth 2.0 (Google, Apple) |
+| **auth** | JWT + OAuth 2.0 (Google) |
 | **users** | Profiles, avatars, CV uploads, career trajectories |
 | **clubs** | Club management, membership, invitations |
 | **jobs** | Job opportunities + applications (core feature) |

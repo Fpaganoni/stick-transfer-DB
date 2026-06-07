@@ -6,14 +6,12 @@ import * as bcrypt from "bcrypt";
 /**
  * AuthService — handles all authentication logic:
  *  - Email/password login (validateUser + login)
- *  - OAuth login for Google and Apple (oauthLogin)
+ *  - OAuth login for Google (oauthLogin)
  *
  * SECURITY NOTES:
  *  - OAuth users have password = null. Never try to bcrypt.compare against null.
  *  - Always identify OAuth users first by (authProvider + socialId), then fall
  *    back to email to link pre-existing email/password accounts.
- *  - Apple only sends email on the FIRST login. socialId (Apple's `sub`) is the
- *    only reliable key for all subsequent Apple logins.
  */
 @Injectable()
 export class AuthService {
@@ -46,25 +44,43 @@ export class AuthService {
   }
 
   /**
-   * Handles OAuth login for Google and Apple.
+   * Decodes and verifies the Bearer token from a GraphQL context's Authorization
+   * header, returning the authenticated user's id and role — or null if the
+   * header is missing or the token is invalid/expired.
+   *
+   * Used by resolvers that need to know "who's asking" (e.g. isLikedByCurrentUser,
+   * follow/like/save mutations, requireSuperAdmin) without enforcing a hard guard.
+   */
+  getUserFromAuthHeader(authHeader?: string): { userId: string; role: string } | null {
+    if (!authHeader?.startsWith("Bearer ")) return null;
+    try {
+      const payload = this.jwtService.verify(authHeader.slice(7));
+      return { userId: payload.sub, role: payload.role };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Handles OAuth login for Google.
    *
    * Flow:
    *  1. Look up user by (authProvider + socialId) → fastest path for returning users.
    *  2. If not found, look up by email → link OAuth provider to an existing email account.
    *  3. If still not found, create a new user (password = null, authProvider set).
    *
-   * @param profile.email      Email from the provider (may be undefined for Apple after 1st login)
+   * @param profile.email      Email from the provider
    * @param profile.displayName Human-readable name from the provider
-   * @param profile.provider   'GOOGLE' | 'APPLE'
-   * @param profile.socialId   The provider's unique user ID (Google: profile.id, Apple: idToken.sub)
+   * @param profile.provider   'GOOGLE'
+   * @param profile.socialId   The provider's unique user ID (Google: profile.id)
    */
   async oauthLogin(profile: {
     email?: string;
     displayName?: string;
-    provider: "GOOGLE" | "APPLE";
+    provider: "GOOGLE";
     socialId: string;
   }) {
-    // Step 1: Look up by socialId + provider (handles all returning Apple users too)
+    // Step 1: Look up by socialId + provider — fastest path for returning users.
     let user = await this.prisma.user.findFirst({
       where: {
         authProvider: profile.provider,
@@ -93,11 +109,11 @@ export class AuthService {
       }
     }
 
-    // Step 3: No existing user — require email to register (Apple may omit it after 1st login)
+    // Step 3: No existing user — require email to register
     if (!profile.email) {
       throw new UnauthorizedException(
         "Unable to authenticate: email is required to create a new account. " +
-          "Please ensure you share your email when signing in with Apple.",
+          "Please ensure you share your email when signing in.",
       );
     }
 
