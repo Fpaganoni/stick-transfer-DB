@@ -56,8 +56,7 @@ type Club {
   verificationDoc: String
   benefits: [String!]!
   videos: [String!]!
-  adminId: ID
-  admin: User
+  user: User!
   members: [ClubMember!]!
   createdAt: String!
   updatedAt: String!
@@ -474,11 +473,11 @@ type Mutation {
   getS3PresignedUrl(fileName: String!, contentType: String!): S3PresignedUrl!
 
   # Clubs
+  """Creates the club profile for the authenticated user (must have role CLUB)."""
   createClub(
     name: String!
     city: String!
     country: String!
-    adminId: ID!
     location: String
     benefits: [String!]
     instagram: String
@@ -486,6 +485,8 @@ type Mutation {
     facebook: String
     tiktok: String
   ): Club!
+  """Super admin only: approves a club's verification request."""
+  verifyClub(clubId: ID!): Club!
   createTeam(clubId: String!, name: String!, category: String!): Team!
   invitePlayerToClub(
     clubId: String!

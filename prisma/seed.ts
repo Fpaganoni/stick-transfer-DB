@@ -31,6 +31,157 @@ async function main() {
   // Hash password for all mock users
   const hashedPassword = await bcrypt.hash("password123", 10);
 
+  // Helper function to determine gender from name
+  const getGenderFromName = (name: string): "male" | "female" => {
+    const femaleNames = [
+      "Lucía",
+      "Sofía",
+      "María",
+      "Valentina",
+      "Camila",
+      "Isabella",
+      "Martina",
+      "Florencia",
+      "Catalina",
+      "Delfina",
+      "Agustina",
+      "Milagros",
+    ];
+    const firstName = name.split(" ")[0];
+    return femaleNames.includes(firstName) ? "female" : "male";
+  };
+
+  // Helper to generate a realistic date of birth for a given age range
+  const randomDateOfBirth = (minAge: number, maxAge: number): Date => {
+    const age = minAge + Math.floor(Math.random() * (maxAge - minAge + 1));
+    const year = new Date().getFullYear() - age;
+    const month = Math.floor(Math.random() * 12);
+    const day = 1 + Math.floor(Math.random() * 28);
+    return new Date(year, month, day);
+  };
+
+  // ========== CLUB USERS (role: CLUB) ==========
+  // Created first: each Club profile below shares its id with one of these users.
+  console.log("🔑 Creating club users...");
+
+  const clubUserData = [
+    // Spanish clubs admins
+    {
+      username: "admin_campo_madrid",
+      email: "admin.campomadrid@hockey-test.com",
+      name: "Antonio López",
+      country: "🇪🇸",
+      city: "Madrid",
+    },
+    {
+      username: "admin_polo_barcelona",
+      email: "admin.polobarcelona@hockey-test.com",
+      name: "Marta Soler",
+      country: "🇪🇸",
+      city: "Barcelona",
+    },
+    {
+      username: "admin_real_polo",
+      email: "admin.realpolo@hockey-test.com",
+      name: "Jordi Puig",
+      country: "🇪🇸",
+      city: "Barcelona",
+    },
+    {
+      username: "admin_terrassa",
+      email: "admin.terrassa@hockey-test.com",
+      name: "Núria Casas",
+      country: "🇪🇸",
+      city: "Terrassa",
+    },
+    {
+      username: "admin_atletic_terrassa",
+      email: "admin.atleticterrassa@hockey-test.com",
+      name: "Pau Martínez",
+      country: "🇪🇸",
+      city: "Terrassa",
+    },
+    // Argentinian clubs admins
+    {
+      username: "admin_san_isidro",
+      email: "admin.sanisidro@hockey-test.com",
+      name: "Gustavo Pérez",
+      country: "🇦🇷",
+      city: "Buenos Aires",
+    },
+    {
+      username: "admin_belgrano",
+      email: "admin.belgrano@hockey-test.com",
+      name: "Florencia Ríos",
+      country: "🇦🇷",
+      city: "Buenos Aires",
+    },
+    {
+      username: "admin_gimnasia",
+      email: "admin.gimnasia@hockey-test.com",
+      name: "Hernán Soria",
+      country: "🇦🇷",
+      city: "Buenos Aires",
+    },
+    {
+      username: "admin_italiano",
+      email: "admin.italiano@hockey-test.com",
+      name: "Silvana Gallo",
+      country: "🇦🇷",
+      city: "Buenos Aires",
+    },
+    {
+      username: "admin_lomas",
+      email: "admin.lomas@hockey-test.com",
+      name: "Eduardo Bravo",
+      country: "🇦🇷",
+      city: "Lomas de Zamora",
+    },
+    // International clubs admins
+    {
+      username: "admin_rotterdam",
+      email: "admin.rotterdam@hockey-test.com",
+      name: "Lars van Dijk",
+      country: "🇳🇱",
+      city: "Rotterdam",
+    },
+    {
+      username: "admin_amsterdam",
+      email: "admin.amsterdam@hockey-test.com",
+      name: "Sophie de Boer",
+      country: "🇳🇱",
+      city: "Amsterdam",
+    },
+  ];
+
+  const clubUsers = [];
+  for (let index = 0; index < clubUserData.length; index++) {
+    const clubUser = clubUserData[index];
+    const gender = getGenderFromName(clubUser.name);
+    const genderPath = gender === "female" ? "women" : "men";
+    const cu = await prisma.user.create({
+      data: {
+        email: clubUser.email,
+        username: clubUser.username,
+        name: clubUser.name,
+        password: hashedPassword,
+        role: "CLUB",
+        bio: `Club administrator with passion for field hockey. Managing and growing the club every day! 🏑`,
+        avatar: `https://randomuser.me/api/portraits/${genderPath}/${50 + index}.jpg`,
+        country: clubUser.country,
+        city: clubUser.city,
+        dateOfBirth: randomDateOfBirth(35, 60),
+        level: "PROFESSIONAL",
+        yearsOfExperience: 15, // Club users are Professional by default
+        isVerified: true,
+        isEmailVerified: true,
+      },
+    });
+    clubUsers.push(cu);
+  }
+
+  console.log(`✅ Created ${clubUsers.length} club users\n`);
+
   // ========== FIELD HOCKEY CLUBS ==========
   console.log("🏑 Creating field hockey clubs...");
 
@@ -38,6 +189,7 @@ async function main() {
     // Spanish field hockey clubs
     prisma.club.create({
       data: {
+        id: clubUsers[0].id,
         name: "Club de Campo Villa de Madrid",
         city: "Madrid",
         country: "🇪🇸 España",
@@ -59,6 +211,7 @@ async function main() {
     }),
     prisma.club.create({
       data: {
+        id: clubUsers[1].id,
         name: "RC Polo Barcelona",
         city: "Barcelona",
         country: "🇪🇸 España",
@@ -81,6 +234,7 @@ async function main() {
     }),
     prisma.club.create({
       data: {
+        id: clubUsers[2].id,
         name: "Real Club de Polo",
         city: "Barcelona",
         country: "🇪🇸 España",
@@ -95,6 +249,7 @@ async function main() {
     }),
     prisma.club.create({
       data: {
+        id: clubUsers[3].id,
         name: "CD Terrassa HC",
         city: "Terrassa",
         country: "🇪🇸 España",
@@ -110,6 +265,7 @@ async function main() {
     }),
     prisma.club.create({
       data: {
+        id: clubUsers[4].id,
         name: "Atlètic Terrassa HC",
         city: "Terrassa",
         country: "🇪🇸 España",
@@ -129,6 +285,7 @@ async function main() {
     // Argentinian field hockey clubs
     prisma.club.create({
       data: {
+        id: clubUsers[5].id,
         name: "Club Atlético San Isidro",
         city: "Buenos Aires",
         country: "🇦🇷 Argentina",
@@ -148,6 +305,7 @@ async function main() {
     }),
     prisma.club.create({
       data: {
+        id: clubUsers[6].id,
         name: "Club Atletico Belgrano",
         city: "Buenos Aires",
         country: "🇦🇷 Argentina",
@@ -166,6 +324,7 @@ async function main() {
     }),
     prisma.club.create({
       data: {
+        id: clubUsers[7].id,
         name: "Gimnasia y Esgrima Buenos Aires",
         city: "Buenos Aires",
         country: "🇦🇷 Argentina",
@@ -185,6 +344,7 @@ async function main() {
     }),
     prisma.club.create({
       data: {
+        id: clubUsers[8].id,
         name: "Club Italiano",
         city: "Buenos Aires",
         country: "🇦🇷 Argentina",
@@ -203,6 +363,7 @@ async function main() {
     }),
     prisma.club.create({
       data: {
+        id: clubUsers[9].id,
         name: "Lomas Athletic Club",
         city: "Lomas de Zamora",
         country: "🇦🇷 Argentina",
@@ -218,6 +379,7 @@ async function main() {
     // International clubs
     prisma.club.create({
       data: {
+        id: clubUsers[10].id,
         name: "HC Rotterdam",
         city: "Rotterdam",
         country: "🇳🇱 Netherlands",
@@ -236,6 +398,7 @@ async function main() {
     }),
     prisma.club.create({
       data: {
+        id: clubUsers[11].id,
         name: "Amsterdam HC",
         city: "Amsterdam",
         country: "🇳🇱 Netherlands",
@@ -462,35 +625,6 @@ async function main() {
     },
   ];
 
-  // Helper function to determine gender from name
-  const getGenderFromName = (name: string): "male" | "female" => {
-    const femaleNames = [
-      "Lucía",
-      "Sofía",
-      "María",
-      "Valentina",
-      "Camila",
-      "Isabella",
-      "Martina",
-      "Florencia",
-      "Catalina",
-      "Delfina",
-      "Agustina",
-      "Milagros",
-    ];
-    const firstName = name.split(" ")[0];
-    return femaleNames.includes(firstName) ? "female" : "male";
-  };
-
-  // Helper to generate a realistic date of birth for a given age range
-  const randomDateOfBirth = (minAge: number, maxAge: number): Date => {
-    const age = minAge + Math.floor(Math.random() * (maxAge - minAge + 1));
-    const year = new Date().getFullYear() - age;
-    const month = Math.floor(Math.random() * 12);
-    const day = 1 + Math.floor(Math.random() * 28);
-    return new Date(year, month, day);
-  };
-
   // Helper to derive level from years of experience (PROFESSIONAL: >=5 years)
   const levelFromExperience = (yearsOfExperience: number): "PROFESSIONAL" | "AMATEUR" =>
     yearsOfExperience >= 5 ? "PROFESSIONAL" : "AMATEUR";
@@ -622,127 +756,6 @@ async function main() {
 
   console.log(`✅ Created ${coaches.length} coaches\n`);
 
-  // ========== CLUB USERS (role: CLUB) ==========
-  console.log("🔑 Creating club users...");
-
-  const clubUserData = [
-    // Spanish clubs admins
-    {
-      username: "admin_campo_madrid",
-      email: "admin.campomadrid@hockey-test.com",
-      name: "Antonio López",
-      country: "🇪🇸",
-      city: "Madrid",
-    },
-    {
-      username: "admin_polo_barcelona",
-      email: "admin.polobarcelona@hockey-test.com",
-      name: "Marta Soler",
-      country: "🇪🇸",
-      city: "Barcelona",
-    },
-    {
-      username: "admin_real_polo",
-      email: "admin.realpolo@hockey-test.com",
-      name: "Jordi Puig",
-      country: "🇪🇸",
-      city: "Barcelona",
-    },
-    {
-      username: "admin_terrassa",
-      email: "admin.terrassa@hockey-test.com",
-      name: "Núria Casas",
-      country: "🇪🇸",
-      city: "Terrassa",
-    },
-    {
-      username: "admin_atletic_terrassa",
-      email: "admin.atleticterrassa@hockey-test.com",
-      name: "Pau Martínez",
-      country: "🇪🇸",
-      city: "Terrassa",
-    },
-    // Argentinian clubs admins
-    {
-      username: "admin_san_isidro",
-      email: "admin.sanisidro@hockey-test.com",
-      name: "Gustavo Pérez",
-      country: "🇦🇷",
-      city: "Buenos Aires",
-    },
-    {
-      username: "admin_belgrano",
-      email: "admin.belgrano@hockey-test.com",
-      name: "Florencia Ríos",
-      country: "🇦🇷",
-      city: "Buenos Aires",
-    },
-    {
-      username: "admin_gimnasia",
-      email: "admin.gimnasia@hockey-test.com",
-      name: "Hernán Soria",
-      country: "🇦🇷",
-      city: "Buenos Aires",
-    },
-    {
-      username: "admin_italiano",
-      email: "admin.italiano@hockey-test.com",
-      name: "Silvana Gallo",
-      country: "🇦🇷",
-      city: "Buenos Aires",
-    },
-    {
-      username: "admin_lomas",
-      email: "admin.lomas@hockey-test.com",
-      name: "Eduardo Bravo",
-      country: "🇦🇷",
-      city: "Lomas de Zamora",
-    },
-    // International clubs admins
-    {
-      username: "admin_rotterdam",
-      email: "admin.rotterdam@hockey-test.com",
-      name: "Lars van Dijk",
-      country: "🇳🇱",
-      city: "Rotterdam",
-    },
-    {
-      username: "admin_amsterdam",
-      email: "admin.amsterdam@hockey-test.com",
-      name: "Sophie de Boer",
-      country: "🇳🇱",
-      city: "Amsterdam",
-    },
-  ];
-
-  const clubUsers = [];
-  for (let index = 0; index < clubUserData.length; index++) {
-    const clubUser = clubUserData[index];
-    const gender = getGenderFromName(clubUser.name);
-    const genderPath = gender === "female" ? "women" : "men";
-    const cu = await prisma.user.create({
-      data: {
-        email: clubUser.email,
-        username: clubUser.username,
-        name: clubUser.name,
-        password: hashedPassword,
-        role: "CLUB",
-        bio: `Club administrator with passion for field hockey. Managing and growing the club every day! 🏑`,
-        avatar: `https://randomuser.me/api/portraits/${genderPath}/${50 + index}.jpg`,
-        country: clubUser.country,
-        city: clubUser.city,
-        dateOfBirth: randomDateOfBirth(35, 60),
-        level: "PROFESSIONAL",
-        yearsOfExperience: 15, // Club users are Professional by default
-        isVerified: true,
-        isEmailVerified: true,
-      },
-    });
-    clubUsers.push(cu);
-  }
-
-  console.log(`✅ Created ${clubUsers.length} club users\n`);
-
   // ========== SUPERADMIN ==========
   console.log("🛡️  Creating super admin...");
 
@@ -774,7 +787,6 @@ async function main() {
     await prisma.club.update({
       where: { id: club.id },
       data: {
-        adminId: clubUsers[index % clubUsers.length].id,
         email:
           club.email ||
           `contact@${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}.com`,

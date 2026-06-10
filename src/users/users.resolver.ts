@@ -83,10 +83,10 @@ export class UsersResolver {
 
       if (normalizedRole === "CLUB" && clubName) {
         await this.clubsService.create({
+          userId: user.id,
           name: clubName,
           city: city!,
           country: country!,
-          adminId: user.id,
         });
       }
 

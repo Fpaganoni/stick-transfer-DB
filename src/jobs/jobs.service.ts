@@ -138,15 +138,13 @@ export class JobsService {
         },
       });
 
-      const adminId = application.jobOpportunity.club.adminId;
-      if (adminId) {
-        this.eventEmitter.emit("job.application_received", {
-          actorId: data.userId,
-          recipientId: adminId,
-          type: NotificationType.APPLICATION_RECEIVED,
-          entityId: application.id,
-        });
-      }
+      const clubOwnerId = application.jobOpportunity.club.id;
+      this.eventEmitter.emit("job.application_received", {
+        actorId: data.userId,
+        recipientId: clubOwnerId,
+        type: NotificationType.APPLICATION_RECEIVED,
+        entityId: application.id,
+      });
 
       return application;
     } catch (error) {
@@ -212,7 +210,7 @@ export class JobsService {
       include: { jobOpportunity: { include: { club: true } } },
     });
     if (!application) throw new NotFoundException("Application not found");
-    if (application.jobOpportunity.club.adminId !== currentUserId) {
+    if (application.jobOpportunity.club.id !== currentUserId) {
       throw new ForbiddenException("You are not the admin of this club");
     }
 
@@ -249,10 +247,10 @@ export class JobsService {
   ) {
     const club = await this.prisma.club.findUnique({
       where: { id: clubId },
-      select: { adminId: true },
+      select: { id: true },
     });
     if (!club) throw new NotFoundException("Club not found");
-    if (club.adminId !== currentUserId) {
+    if (club.id !== currentUserId) {
       throw new ForbiddenException("You are not the admin of this club");
     }
 

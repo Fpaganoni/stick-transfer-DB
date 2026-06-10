@@ -1,0 +1,60 @@
+enum ReportTargetType {
+  USER
+  CLUB
+  POST
+  JOB_OPPORTUNITY
+  MESSAGE
+  NEWS_ARTICLE
+}
+
+enum ReportReason {
+  SPAM
+  HARASSMENT
+  INAPPROPRIATE_CONTENT
+  FAKE_PROFILE
+  SCAM
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  ACTION_TAKEN
+  DISMISSED
+}
+
+type Report {
+  id: ID!
+  reporterId: ID!
+  reporter: User!
+  targetType: ReportTargetType!
+  targetId: ID!
+  reason: ReportReason!
+  description: String
+  status: ReportStatus!
+  reviewedById: ID
+  reviewedBy: User
+  reviewedAt: String
+  createdAt: String!
+  updatedAt: String!
+}
+
+extend type Query {
+  """Super admin only: list reports, optionally filtered by status/targetType."""
+  reports(status: ReportStatus, targetType: ReportTargetType, page: Int, limit: Int): [Report!]!
+  """Super admin only: fetch a single report by id."""
+  report(id: ID!): Report!
+}
+
+extend type Mutation {
+  """Authenticated users can report a user, club, post, job, message or news article."""
+  createReport(
+    targetType: ReportTargetType!
+    targetId: ID!
+    reason: ReportReason!
+    description: String
+  ): Report!
+
+  """Super admin only: update the moderation status of a report."""
+  updateReportStatus(id: ID!, status: ReportStatus!): Report!
+}
