@@ -12,6 +12,10 @@ export class UsersService {
     username?: string;
     password?: string;
     role?: string;
+    country?: string;
+    city?: string;
+    position?: string;
+    dateOfBirth?: string;
   }) {
     const hashed = data.password
       ? await bcrypt.hash(data.password, 10)
@@ -23,6 +27,10 @@ export class UsersService {
         username: data.username,
         password: hashed,
         role: data.role as any,
+        country: data.country,
+        city: data.city,
+        position: data.position as any,
+        dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
       },
     });
   }
@@ -100,38 +108,22 @@ export class UsersService {
       yearsOfExperience?: number;
       cvUrl?: string;
       multimedia?: string[];
-      statistics?: any;
       username?: string;
+      dateOfBirth?: string;
+      level?: string;
       trajectories?: any[];
     },
   ) {
-    const { statistics, trajectories, ...userUpdateData } = data;
+    const { trajectories, dateOfBirth, level, ...userUpdateData } = data;
 
     const updatedUser = await this.prisma.user.update({
       where: { id },
-      data: userUpdateData,
+      data: {
+        ...userUpdateData,
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+        level: level as any,
+      },
     });
-
-    if (statistics) {
-      const careerStats = await this.prisma.statistics.findFirst({
-        where: { userId: id, season: "Career" },
-      });
-
-      if (careerStats) {
-        await this.prisma.statistics.update({
-          where: { id: careerStats.id },
-          data: statistics,
-        });
-      } else {
-        await this.prisma.statistics.create({
-          data: {
-            ...statistics,
-            userId: id,
-            season: "Career",
-          },
-        });
-      }
-    }
 
     if (trajectories) {
       // Logic to sync trajectories: Full replacement for profile sync

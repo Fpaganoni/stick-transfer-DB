@@ -1,18 +1,75 @@
-import { Resolver, Query, Mutation, Args } from "@nestjs/graphql";
+import {
+  Resolver,
+  Query,
+  Mutation,
+  Args,
+  Context,
+  ResolveField,
+  Parent,
+  ID,
+} from "@nestjs/graphql";
+import { UnauthorizedException } from "@nestjs/common";
 import { JobsService } from "./jobs.service";
+import { AuthService } from "../auth/auth.service";
 
 @Resolver("JobOpportunity")
 export class JobsResolver {
-  constructor(private jobsService: JobsService) {}
+  constructor(
+    private jobsService: JobsService,
+    private authService: AuthService,
+  ) {}
+
+  private getCurrentUser(context: any): { userId: string; role: string } | null {
+    return this.authService.getUserFromAuthHeader(
+      context?.req?.headers?.authorization,
+    );
+  }
+
+  private requireUser(context: any): { userId: string; role: string } {
+    const user = this.getCurrentUser(context);
+    if (!user) throw new UnauthorizedException("Authentication required");
+    return user;
+  }
+
+  // Field resolver for isSavedByCurrentUser — optional auth, false for anonymous
+  @ResolveField()
+  async isSavedByCurrentUser(@Parent() job: any, @Context() context: any) {
+    const currentUser = this.getCurrentUser(context);
+    if (!currentUser) return false;
+    return this.jobsService.isSavedByUser(currentUser.userId, job.id);
+  }
+
+  @Query(() => [Object])
+  async savedJobOpportunities(@Context() context: any) {
+    const currentUser = this.requireUser(context);
+    return this.jobsService.getSavedJobs(currentUser.userId);
+  }
+
+  @Mutation(() => Boolean)
+  async saveJobOpportunity(
+    @Context() context: any,
+    @Args("jobOpportunityId", { type: () => ID }) jobOpportunityId: string,
+  ) {
+    const currentUser = this.requireUser(context);
+    return this.jobsService.saveJob(currentUser.userId, jobOpportunityId);
+  }
+
+  @Mutation(() => Boolean)
+  async unsaveJobOpportunity(
+    @Context() context: any,
+    @Args("jobOpportunityId", { type: () => ID }) jobOpportunityId: string,
+  ) {
+    const currentUser = this.requireUser(context);
+    return this.jobsService.unsaveJob(currentUser.userId, jobOpportunityId);
+  }
 
   @Query(() => [Object])
   async jobOpportunities(
-    @Args("positionType", { nullable: true }) positionType?: string,
-    @Args("country", { nullable: true }) country?: string,
-    @Args("city", { nullable: true }) city?: string,
-    @Args("status", { nullable: true }) status?: string
+    @Args("filters", { nullable: true }) filters?: any,
+    @Args("page", { nullable: true }) page?: number,
+    @Args("limit", { nullable: true }) limit?: number,
   ) {
-    return this.jobsService.findAll({ positionType, country, city, status });
+    return this.jobsService.findAll(filters, page, limit);
   }
 
   @Query(() => Object, { nullable: true })
@@ -25,23 +82,31 @@ export class JobsResolver {
     @Args("title") title: string,
     @Args("description") description: string,
     @Args("positionType") positionType: string,
+    @Args("level") level: string,
     @Args("clubId") clubId: string,
     @Args("country") country: string,
     @Args("city") city: string,
     @Args("salary", { nullable: true }) salary?: number,
     @Args("currency", { nullable: true }) currency?: string,
-    @Args("benefits", { nullable: true }) benefits?: string
+    @Args("benefits", { nullable: true }) benefits?: string,
+    @Args("gender", { nullable: true }) gender?: string,
+    @Args("expiresAt", { nullable: true }) expiresAt?: string,
+    @Args("division", { nullable: true }) division?: string
   ) {
     return this.jobsService.create({
       title,
       description,
       positionType,
+      level,
       clubId,
       country,
       city,
       salary,
       currency,
       benefits,
+      gender,
+      expiresAt,
+      division,
     });
   }
 
@@ -95,18 +160,37 @@ export class JobsResolver {
     return this.jobsService.getApplicationById(id);
   }
 
+  @Query(() => [Object])
+  async getClubApplications(
+    @Context() context: any,
+    @Args("clubId", { type: () => ID }) clubId: string,
+    @Args("status", { nullable: true }) status?: string,
+    @Args("page", { nullable: true }) page?: number,
+    @Args("limit", { nullable: true }) limit?: number,
+  ) {
+    const currentUser = this.requireUser(context);
+    return this.jobsService.getClubApplications(
+      currentUser.userId,
+      clubId,
+      status,
+      page,
+      limit,
+    );
+  }
+
   @Mutation(() => Object)
   async updateApplicationStatus(
-    @Args("id") id: string,
+    @Context() context: any,
+    @Args("applicationId", { type: () => ID }) applicationId: string,
     @Args("status") status: string,
-    @Args("reviewedBy", { nullable: true }) reviewedBy?: string,
     @Args("notes", { nullable: true }) notes?: string
   ) {
+    const currentUser = this.requireUser(context);
     return this.jobsService.updateApplicationStatus(
-      id,
+      currentUser.userId,
+      applicationId,
       status,
-      reviewedBy,
-      notes
+      notes,
     );
   }
 

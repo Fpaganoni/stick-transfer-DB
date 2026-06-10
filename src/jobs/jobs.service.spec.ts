@@ -1,6 +1,11 @@
 import { Test, TestingModule } from "@nestjs/testing";
+import { EventEmitter2 } from "@nestjs/event-emitter";
 import { JobsService } from "./jobs.service";
 import { PrismaService } from "../prisma.service";
+
+const mockEventEmitter = {
+  emit: jest.fn(),
+};
 
 const mockPrismaService = {
   jobOpportunity: {
@@ -28,6 +33,7 @@ describe("JobsService", () => {
       providers: [
         JobsService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: EventEmitter2, useValue: mockEventEmitter },
       ],
     }).compile();
 
@@ -53,11 +59,11 @@ describe("JobsService", () => {
     it("should pass filters to Prisma where clause", async () => {
       prisma.jobOpportunity.findMany.mockResolvedValue([]);
 
-      await service.findAll({ country: "Spain", city: "Madrid", status: "OPEN" });
+      await service.findAll({ country: "Spain", clubId: "club-1", status: "OPEN" });
 
       const callWhere = prisma.jobOpportunity.findMany.mock.calls[0][0].where;
       expect(callWhere.country).toBe("Spain");
-      expect(callWhere.city).toBe("Madrid");
+      expect(callWhere.clubId).toBe("club-1");
       expect(callWhere.status).toBe("OPEN");
     });
   });
@@ -90,6 +96,7 @@ describe("JobsService", () => {
         title: "Forward Player",
         description: "We need a forward",
         positionType: "PLAYER",
+        level: "PROFESSIONAL",
         clubId: "club-1",
         country: "Spain",
         city: "Barcelona",
@@ -130,7 +137,11 @@ describe("JobsService", () => {
     };
 
     it("should create an application with cover letter", async () => {
-      const mockApplication = { id: "app-1", ...applicationData };
+      const mockApplication = {
+        id: "app-1",
+        ...applicationData,
+        jobOpportunity: { club: { adminId: "club-admin-1" } },
+      };
       prisma.jobApplication.create.mockResolvedValue(mockApplication);
 
       const result = await service.applyForJob(applicationData);
@@ -189,16 +200,45 @@ describe("JobsService", () => {
 
   // ── updateApplicationStatus ───────────────────────────────────────────────
   describe("updateApplicationStatus", () => {
-    it("should update status and set reviewedAt automatically", async () => {
-      prisma.jobApplication.update.mockResolvedValue({ id: "app-1", status: "ACCEPTED" });
+    const currentUserId = "club-admin-1";
+    const applicationId = "app-1";
 
-      await service.updateApplicationStatus("app-1", "ACCEPTED", "admin-1", "Great profile");
+    it("should update status and set reviewedAt when current user is the club admin", async () => {
+      prisma.jobApplication.findUnique.mockResolvedValue({
+        id: applicationId,
+        userId: "user-1",
+        jobOpportunity: { club: { adminId: currentUserId } },
+      });
+      prisma.jobApplication.update.mockResolvedValue({ id: applicationId, status: "ACCEPTED" });
+
+      await service.updateApplicationStatus(currentUserId, applicationId, "ACCEPTED", "Great profile");
 
       const callData = prisma.jobApplication.update.mock.calls[0][0].data;
       expect(callData.status).toBe("ACCEPTED");
       expect(callData.reviewedAt).toBeInstanceOf(Date);
-      expect(callData.reviewedBy).toBe("admin-1");
+      expect(callData.reviewedBy).toBe(currentUserId);
       expect(callData.notes).toBe("Great profile");
+    });
+
+    it("should reject when current user is not the club admin", async () => {
+      prisma.jobApplication.findUnique.mockResolvedValue({
+        id: applicationId,
+        userId: "user-1",
+        jobOpportunity: { club: { adminId: "someone-else" } },
+      });
+
+      await expect(
+        service.updateApplicationStatus(currentUserId, applicationId, "ACCEPTED")
+      ).rejects.toThrow("You are not the admin of this club");
+      expect(prisma.jobApplication.update).not.toHaveBeenCalled();
+    });
+
+    it("should throw if application not found", async () => {
+      prisma.jobApplication.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.updateApplicationStatus(currentUserId, applicationId, "ACCEPTED")
+      ).rejects.toThrow("Application not found");
     });
   });
 

@@ -19,6 +19,8 @@ import { MessagingModule } from "./messaging/messaging.module";
 import { ExploreModule } from "./explore/explore.module";
 import { UploadsModule } from "./uploads/uploads.module";
 import { HealthModule } from "./health/health.module";
+import { SocialModule } from "./social/social.module";
+import { NewsModule } from "./news/news.module";
 
 @Module({
   imports: [
@@ -44,6 +46,8 @@ import { HealthModule } from "./health/health.module";
     ExploreModule,
     UploadsModule,
     HealthModule,
+    SocialModule,
+    NewsModule,
   ],
   providers: [
     PrismaService,

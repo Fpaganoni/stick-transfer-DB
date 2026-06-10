@@ -43,7 +43,7 @@ export class ClubsService {
   }
 
   /**
-   * Returns a flat view pairing each Club with its CLUB_ADMIN user.
+   * Returns a flat view pairing each Club with its CLUB user.
    * Clubs without an admin are still included (adminId / admin fields will be null).
    */
   async getClubAdmins() {
@@ -81,7 +81,7 @@ export class ClubsService {
     facebook?: string;
     tiktok?: string;
   }) {
-    // Validate that the adminId corresponds to a CLUB_ADMIN user
+    // Validate that the adminId corresponds to a CLUB user
     const adminUser = await this.prisma.user.findUnique({
       where: { id: data.adminId },
     });
@@ -90,9 +90,9 @@ export class ClubsService {
       throw new BadRequestException(`User with id "${data.adminId}" not found.`);
     }
 
-    if (adminUser.role !== "CLUB_ADMIN") {
+    if (adminUser.role !== "CLUB") {
       throw new BadRequestException(
-        `User "${adminUser.name}" must have the CLUB_ADMIN role to create a club. ` +
+        `User "${adminUser.name}" must have the CLUB role to create a club. ` +
         `Current role: ${adminUser.role}.`
       );
     }

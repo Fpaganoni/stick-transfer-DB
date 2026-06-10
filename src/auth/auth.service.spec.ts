@@ -196,14 +196,14 @@ describe("AuthService", () => {
       expect(createdData.username).toBe("coach2");
     });
 
-    it("should throw UnauthorizedException for new Apple user without email", async () => {
-      // Apple only sends email on first login. Without it, we cannot register a new user.
+    it("should throw UnauthorizedException for new OAuth user without email", async () => {
+      // Some providers/scopes can omit email. Without it we cannot register a new user.
       prisma.user.findFirst.mockResolvedValue(null);
 
       await expect(
         service.oauthLogin({
-          provider: "APPLE",
-          socialId: "apple-sub-999",
+          provider: "GOOGLE",
+          socialId: "google-sub-999",
           // email intentionally omitted
         })
       ).rejects.toThrow(UnauthorizedException);
@@ -211,15 +211,14 @@ describe("AuthService", () => {
       expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
-    it("should handle Apple returning socialId without email for existing user", async () => {
-      // Key Apple behavior: 2nd+ logins omit email. Must still work via socialId.
-      const appleUser = { ...existingOAuthUser, authProvider: "APPLE", socialId: "apple-sub-999" };
-      prisma.user.findFirst.mockResolvedValue(appleUser);
+    it("should resolve a returning OAuth user by socialId without email", async () => {
+      const returningUser = { ...existingOAuthUser, authProvider: "GOOGLE", socialId: "google-sub-999" };
+      prisma.user.findFirst.mockResolvedValue(returningUser);
 
       const result = await service.oauthLogin({
-        provider: "APPLE",
-        socialId: "apple-sub-999",
-        // no email — this is the normal Apple returning-user scenario
+        provider: "GOOGLE",
+        socialId: "google-sub-999",
+        // no email — resolved purely via socialId lookup
       });
 
       expect(result).toEqual({ access_token: "mocked-jwt-token" });

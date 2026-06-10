@@ -65,7 +65,7 @@ describe("ClubsService", () => {
     it("should create a club with required fields", async () => {
       const input = { name: "HC Madrid", city: "Madrid", country: "Spain", adminId: "admin-1" };
       const mockClub = { id: "club-2", ...input };
-      const mockAdmin = { id: "admin-1", role: "CLUB_ADMIN" };
+      const mockAdmin = { id: "admin-1", role: "CLUB" };
 
       // Mock user lookup for validation
       prisma.user.findUnique.mockResolvedValue(mockAdmin);
@@ -93,7 +93,7 @@ describe("ClubsService", () => {
 
       prisma.user.findUnique.mockResolvedValue(mockAdmin);
 
-      await expect(service.create(input)).rejects.toThrow("must have the CLUB_ADMIN role");
+      await expect(service.create(input)).rejects.toThrow("must have the CLUB role");
     });
   });
 

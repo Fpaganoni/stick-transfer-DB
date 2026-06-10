@@ -3,6 +3,7 @@ import {
   Mutation,
   Args,
   Query,
+  Context,
   ResolveField,
   Parent,
   ID,
@@ -12,6 +13,8 @@ import { UsersService } from "./users.service";
 import { AuthService } from "../auth/auth.service";
 import { CloudinaryService } from "../uploads/cloudinary.service";
 import { PrismaService } from "../prisma.service";
+import { ClubsService } from "../clubs/clubs.service";
+import { SocialService } from "../social/social.service";
 
 @Resolver("User")
 export class UsersResolver {
@@ -20,7 +23,15 @@ export class UsersResolver {
     private authService: AuthService,
     private cloudinary: CloudinaryService,
     private prisma: PrismaService,
+    private clubsService: ClubsService,
+    private socialService: SocialService,
   ) {}
+
+  private getCurrentUser(context: any): { userId: string; role: string } | null {
+    return this.authService.getUserFromAuthHeader(
+      context?.req?.headers?.authorization,
+    );
+  }
 
   @Mutation(() => String)
   async register(
@@ -29,19 +40,33 @@ export class UsersResolver {
     @Args("username", { nullable: true }) username?: string,
     @Args("password") password?: string,
     @Args("role", { nullable: true }) role?: string,
+    @Args("country", { nullable: true }) country?: string,
+    @Args("city", { nullable: true }) city?: string,
+    @Args("position", { nullable: true }) position?: string,
+    @Args("dateOfBirth", { nullable: true }) dateOfBirth?: string,
+    @Args("clubName", { nullable: true }) clubName?: string,
   ) {
     try {
       // Normalize role to uppercase for case-insensitive validation
       const normalizedRole = role?.toUpperCase();
 
-      // Validate role if provided
+      // Validate role if provided — SUPERADMIN cannot self-register
       if (
         normalizedRole &&
-        !["PLAYER", "COACH", "CLUB_ADMIN"].includes(normalizedRole)
+        !["PLAYER", "COACH", "CLUB"].includes(normalizedRole)
       ) {
-        throw new Error(
-          "Invalid role. Allowed roles: PLAYER, COACH, CLUB_ADMIN",
+        throw new BadRequestException(
+          "Invalid role. Allowed roles: PLAYER, COACH, CLUB",
         );
+      }
+
+      if (normalizedRole === "CLUB") {
+        if (!clubName) {
+          throw new BadRequestException("clubName is required when registering as a CLUB");
+        }
+        if (!country || !city) {
+          throw new BadRequestException("country and city are required when registering as a CLUB");
+        }
       }
 
       const user = await this.usersService.createUser({
@@ -50,7 +75,21 @@ export class UsersResolver {
         username,
         password,
         role: normalizedRole,
+        country,
+        city,
+        position,
+        dateOfBirth,
       });
+
+      if (normalizedRole === "CLUB" && clubName) {
+        await this.clubsService.create({
+          name: clubName,
+          city: city!,
+          country: country!,
+          adminId: user.id,
+        });
+      }
+
       const token = await this.authService.login(user);
       return token.access_token;
     } catch (error) {
@@ -180,7 +219,8 @@ export class UsersResolver {
     @Args("multimedia", { type: () => [String], nullable: true })
     multimedia?: string[],
     @Args("cvUrl", { nullable: true }) cvUrl?: string,
-    @Args("statistics", { nullable: true }) statistics?: any,
+    @Args("dateOfBirth", { nullable: true }) dateOfBirth?: string,
+    @Args("level", { nullable: true }) level?: string,
     @Args("trajectories", { type: () => [Object], nullable: true })
     trajectories?: any[],
   ) {
@@ -199,7 +239,8 @@ export class UsersResolver {
         yearsOfExperience,
         multimedia,
         cvUrl,
-        statistics,
+        dateOfBirth,
+        level,
         trajectories,
       });
     } catch (error) {
@@ -208,23 +249,6 @@ export class UsersResolver {
       }
       throw error;
     }
-  }
-
-  // Field resolver for statistics - returns aggregated career stats
-  @ResolveField()
-  async statistics(@Parent() user: any) {
-    const { id } = user;
-
-    // Get the "Career" statistics record which contains aggregated totals
-    const careerStats = await this.prisma.statistics.findFirst({
-      where: {
-        userId: id,
-        season: "Career",
-      },
-      include: { club: true },
-    });
-
-    return careerStats;
   }
 
   // Field resolver for trajectories
@@ -238,13 +262,32 @@ export class UsersResolver {
     });
   }
 
-  // Field resolver for level - computed from yearsOfExperience
-  // PROFESSIONAL: >= 5 years | AMATEUR: < 5 years or not set
   @ResolveField()
-  async level(@Parent() user: any) {
-    const { yearsOfExperience } = user;
-    return yearsOfExperience != null && yearsOfExperience >= 5
-      ? "PROFESSIONAL"
-      : "AMATEUR";
+  async followersCount(@Parent() user: any) {
+    return this.socialService.countFollowers("USER", user.id);
+  }
+
+  @ResolveField()
+  async followingCount(@Parent() user: any) {
+    return this.socialService.countFollowing("USER", user.id);
+  }
+
+  @ResolveField()
+  async likesReceivedCount(@Parent() user: any) {
+    return this.socialService.countLikesReceived("USER", user.id);
+  }
+
+  @ResolveField()
+  async isFollowedByCurrentUser(@Parent() user: any, @Context() context: any) {
+    const currentUser = this.getCurrentUser(context);
+    if (!currentUser) return false;
+    return this.socialService.isFollowing("USER", currentUser.userId, "USER", user.id);
+  }
+
+  @ResolveField()
+  async isLikedByCurrentUser(@Parent() user: any, @Context() context: any) {
+    const currentUser = this.getCurrentUser(context);
+    if (!currentUser) return false;
+    return this.socialService.hasLiked("USER", currentUser.userId, "USER", user.id);
   }
 }

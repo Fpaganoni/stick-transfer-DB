@@ -1,7 +1,9 @@
-import { Resolver, Query, Mutation, Args, ID } from "@nestjs/graphql";
+import { Resolver, Query, Mutation, Args, Context, ResolveField, Parent, ID } from "@nestjs/graphql";
 import { ClubsService } from "./clubs.service";
 import { NotificationsGateway } from "../notifications/notifications.gateway";
 import { CloudinaryService } from "../uploads/cloudinary.service";
+import { AuthService } from "../auth/auth.service";
+import { SocialService } from "../social/social.service";
 
 @Resolver("Club")
 export class ClubsResolver {
@@ -9,7 +11,15 @@ export class ClubsResolver {
     private clubsService: ClubsService,
     private notifications: NotificationsGateway,
     private cloudinary: CloudinaryService,
+    private authService: AuthService,
+    private socialService: SocialService,
   ) {}
+
+  private getCurrentUser(context: any): { userId: string; role: string } | null {
+    return this.authService.getUserFromAuthHeader(
+      context?.req?.headers?.authorization,
+    );
+  }
 
   @Query()
   clubs() {
@@ -21,7 +31,7 @@ export class ClubsResolver {
     return this.clubsService.findById(id);
   }
 
-  /** Returns a flat view of every club paired with its CLUB_ADMIN user. */
+  /** Returns a flat view of every club paired with its CLUB user. */
   @Query()
   clubAdmins() {
     return this.clubsService.getClubAdmins();
@@ -129,5 +139,29 @@ export class ClubsResolver {
     @Args("documentUrl") documentUrl: string
   ) {
     return this.clubsService.requestVerification(clubId, documentUrl);
+  }
+
+  @ResolveField()
+  async followersCount(@Parent() club: any) {
+    return this.socialService.countFollowers("CLUB", club.id);
+  }
+
+  @ResolveField()
+  async likesReceivedCount(@Parent() club: any) {
+    return this.socialService.countLikesReceived("CLUB", club.id);
+  }
+
+  @ResolveField()
+  async isFollowedByCurrentUser(@Parent() club: any, @Context() context: any) {
+    const currentUser = this.getCurrentUser(context);
+    if (!currentUser) return false;
+    return this.socialService.isFollowing("USER", currentUser.userId, "CLUB", club.id);
+  }
+
+  @ResolveField()
+  async isLikedByCurrentUser(@Parent() club: any, @Context() context: any) {
+    const currentUser = this.getCurrentUser(context);
+    if (!currentUser) return false;
+    return this.socialService.hasLiked("USER", currentUser.userId, "CLUB", club.id);
   }
 }
