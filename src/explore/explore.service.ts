@@ -46,6 +46,9 @@ export class ExploreService {
         throw new Error("Invalid role. Allowed: PLAYER, COACH, CLUB");
       }
       where.role = normalizedRole;
+    } else {
+      // No role filter provided — explore page only shows players and coaches
+      where.role = { in: ["PLAYER", "COACH"] };
     }
 
     // Country filter (exact match — 2-letter ISO code e.g. 'AR', 'US')
