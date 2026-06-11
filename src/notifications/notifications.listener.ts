@@ -48,4 +48,25 @@ export class NotificationsListener {
       await this.notificationsService.createNotification(event);
     } catch {}
   }
+
+  @OnEvent('club.pending_verification')
+  async handleClubPendingVerification(event: NotificationEvent) {
+    try {
+      await this.notificationsService.createNotification(event);
+    } catch {}
+  }
+
+  @OnEvent('club.verified')
+  async handleClubVerified(event: NotificationEvent) {
+    try {
+      await this.notificationsService.createNotification(event);
+    } catch {}
+  }
+
+  @OnEvent('report.created')
+  async handleReportCreated(event: NotificationEvent) {
+    try {
+      await this.notificationsService.createNotification(event);
+    } catch {}
+  }
 }

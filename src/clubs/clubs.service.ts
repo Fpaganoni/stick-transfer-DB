@@ -14,7 +14,7 @@ export class ClubsService {
     return this.prisma.club.findMany({
       include: {
         teams: true,
-        admin: true,
+        user: true,
       },
     });
   }
@@ -23,7 +23,7 @@ export class ClubsService {
     const club = await this.prisma.club.findUnique({
       where: { id },
       include: {
-        admin: true,
+        user: true,
         clubMembers: {
           include: { user: true },
         },
@@ -43,12 +43,12 @@ export class ClubsService {
   }
 
   /**
-   * Returns a flat view pairing each Club with its CLUB user.
-   * Clubs without an admin are still included (adminId / admin fields will be null).
+   * Returns a flat view pairing each Club with the User it belongs to
+   * (Club.id === User.id, so "admin" fields below describe that same user).
    */
   async getClubAdmins() {
     const clubs = await this.prisma.club.findMany({
-      include: { admin: true },
+      include: { user: true },
       orderBy: { name: "asc" },
     });
 
@@ -59,50 +59,57 @@ export class ClubsService {
       clubCountry: club.country,
       clubLeague: club.league ?? null,
       clubIsVerified: club.isVerified,
-      adminId: club.admin?.id ?? null,
-      adminName: club.admin?.name ?? null,
-      adminUsername: club.admin?.username ?? null,
-      adminAvatar: club.admin?.avatar ?? null,
-      adminEmail: club.admin?.email ?? null,
-      adminCountry: club.admin?.country ?? null,
-      adminCity: club.admin?.city ?? null,
+      adminId: club.user.id,
+      adminName: club.user.name,
+      adminUsername: club.user.username,
+      adminAvatar: club.user.avatar,
+      adminEmail: club.user.email,
+      adminCountry: club.user.country,
+      adminCity: club.user.city,
     }));
   }
 
+  /**
+   * Creates the club profile for a User with role CLUB. The club shares the
+   * same id as its owning user (1:1) — there is no separate admin concept.
+   */
   async create(data: {
+    userId: string;
     name: string;
     city: string;
     country: string;
-    adminId: string;
-    location?: string;
     benefits?: string[];
     instagram?: string;
     twitter?: string;
     facebook?: string;
     tiktok?: string;
   }) {
-    // Validate that the adminId corresponds to a CLUB user
-    const adminUser = await this.prisma.user.findUnique({
-      where: { id: data.adminId },
+    const user = await this.prisma.user.findUnique({
+      where: { id: data.userId },
     });
 
-    if (!adminUser) {
-      throw new BadRequestException(`User with id "${data.adminId}" not found.`);
+    if (!user) {
+      throw new BadRequestException(`User with id "${data.userId}" not found.`);
     }
 
-    if (adminUser.role !== "CLUB") {
+    if (user.role !== "CLUB") {
       throw new BadRequestException(
-        `User "${adminUser.name}" must have the CLUB role to create a club. ` +
-        `Current role: ${adminUser.role}.`
+        `User "${user.name}" must have the CLUB role to create a club. ` +
+        `Current role: ${user.role}.`
       );
     }
 
-    return this.prisma.club.create({
+    const existing = await this.prisma.club.findUnique({ where: { id: data.userId } });
+    if (existing) {
+      throw new BadRequestException("This user already has a club profile.");
+    }
+
+    const club = await this.prisma.club.create({
       data: {
+        id: data.userId,
         name: data.name,
         city: data.city,
         country: data.country,
-        adminId: data.adminId,
         benefits: data.benefits || [],
         instagram: data.instagram,
         twitter: data.twitter,
@@ -110,9 +117,50 @@ export class ClubsService {
         tiktok: data.tiktok,
       },
       include: {
-        admin: true,
+        user: true,
       },
     });
+
+    const superadmins = await this.prisma.user.findMany({
+      where: { role: "SUPERADMIN" },
+      select: { id: true },
+    });
+
+    for (const superadmin of superadmins) {
+      this.eventEmitter.emit("club.pending_verification", {
+        actorId: club.id,
+        recipientId: superadmin.id,
+        type: NotificationType.CLUB_PENDING_VERIFICATION,
+        entityId: club.id,
+      });
+    }
+
+    return club;
+  }
+
+  /** Super-admin only: marks a club's verification as approved. */
+  async verifyClub(clubId: string, superadminId: string) {
+    const club = await this.prisma.club.findUnique({ where: { id: clubId } });
+    if (!club) throw new BadRequestException(`Club ${clubId} not found`);
+    if (club.isVerified) throw new BadRequestException(`Club is already verified`);
+
+    const updated = await this.prisma.club.update({
+      where: { id: clubId },
+      data: {
+        isVerified: true,
+        verificationStatus: "VERIFIED",
+      },
+      include: { user: true },
+    });
+
+    this.eventEmitter.emit("club.verified", {
+      actorId: superadminId,
+      recipientId: clubId,
+      type: NotificationType.CLUB_VERIFIED,
+      entityId: clubId,
+    });
+
+    return updated;
   }
 
   async inviteMember(clubId: string, userId: string, invitedById: string) {
@@ -167,7 +215,7 @@ export class ClubsService {
     return this.prisma.club.update({
       where: { id },
       data,
-      include: { admin: true },
+      include: { user: true },
     });
   }
 

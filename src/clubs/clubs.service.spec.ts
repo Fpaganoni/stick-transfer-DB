@@ -6,7 +6,9 @@ import { PrismaService } from "../prisma.service";
 const mockPrismaService = {
   club: {
     findMany: jest.fn(),
+    findUnique: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
   },
   clubMember: {
     findFirst: jest.fn(),
@@ -15,6 +17,7 @@ const mockPrismaService = {
   },
   user: {
     findUnique: jest.fn(),
+    findMany: jest.fn(),
   },
 };
 
@@ -53,7 +56,7 @@ describe("ClubsService", () => {
       expect(prisma.club.findMany).toHaveBeenCalledWith({
         include: {
           teams: true,
-          admin: true,
+          user: true,
         },
       });
       expect(result).toEqual(mockClubs);
@@ -62,38 +65,105 @@ describe("ClubsService", () => {
 
   // ── create ────────────────────────────────────────────────────────────────
   describe("create", () => {
-    it("should create a club with required fields", async () => {
-      const input = { name: "HC Madrid", city: "Madrid", country: "Spain", adminId: "admin-1" };
-      const mockClub = { id: "club-2", ...input };
-      const mockAdmin = { id: "admin-1", role: "CLUB" };
+    it("should create a club whose id matches its owning user (CLUB role)", async () => {
+      const input = { userId: "user-1", name: "HC Madrid", city: "Madrid", country: "Spain" };
+      const mockUser = { id: "user-1", name: "HC Madrid User", role: "CLUB" };
+      const mockClub = { id: "user-1", name: "HC Madrid", city: "Madrid", country: "Spain" };
 
-      // Mock user lookup for validation
-      prisma.user.findUnique.mockResolvedValue(mockAdmin);
+      prisma.user.findUnique.mockResolvedValue(mockUser);
+      prisma.club.findUnique.mockResolvedValue(null); // no existing club profile
       prisma.club.create.mockResolvedValue(mockClub);
+      prisma.user.findMany.mockResolvedValue([]); // no superadmins to notify
 
       const result = await service.create(input);
 
-      expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { id: "admin-1" } });
+      expect(prisma.club.findUnique).toHaveBeenCalledWith({ where: { id: "user-1" } });
       expect(prisma.club.create).toHaveBeenCalledWith({
         data: {
+          id: "user-1",
           name: input.name,
           city: input.city,
           country: input.country,
-          adminId: input.adminId,
           benefits: [],
+          instagram: undefined,
+          twitter: undefined,
+          facebook: undefined,
+          tiktok: undefined,
         },
-        include: { admin: true },
+        include: { user: true },
       });
       expect(result).toEqual(mockClub);
     });
 
-    it("should create a club with optional location and throw if not admin", async () => {
-      const input = { name: "HC Valencia", city: "Valencia", country: "Spain", adminId: "admin-2", location: "Polideportivo Norte" };
-      const mockAdmin = { id: "admin-2", role: "PLAYER" };
+    it("should throw if the user does not have the CLUB role", async () => {
+      const input = { userId: "user-2", name: "HC Valencia", city: "Valencia", country: "Spain" };
+      const mockUser = { id: "user-2", name: "HC Valencia User", role: "PLAYER" };
 
-      prisma.user.findUnique.mockResolvedValue(mockAdmin);
+      prisma.user.findUnique.mockResolvedValue(mockUser);
 
       await expect(service.create(input)).rejects.toThrow("must have the CLUB role");
+    });
+
+    it("should throw if the user already has a club profile", async () => {
+      const input = { userId: "user-3", name: "HC Sevilla", city: "Sevilla", country: "Spain" };
+      const mockUser = { id: "user-3", name: "HC Sevilla User", role: "CLUB" };
+
+      prisma.user.findUnique.mockResolvedValue(mockUser);
+      prisma.club.findUnique.mockResolvedValue({ id: "user-3" });
+
+      await expect(service.create(input)).rejects.toThrow("already has a club profile");
+    });
+
+    it("should notify all superadmins that the new club is pending verification", async () => {
+      const input = { userId: "user-4", name: "HC Bilbao", city: "Bilbao", country: "Spain" };
+      const mockUser = { id: "user-4", name: "HC Bilbao User", role: "CLUB" };
+      const mockClub = { id: "user-4", name: "HC Bilbao" };
+
+      prisma.user.findUnique.mockResolvedValue(mockUser);
+      prisma.club.findUnique.mockResolvedValue(null);
+      prisma.club.create.mockResolvedValue(mockClub);
+      prisma.user.findMany.mockResolvedValue([{ id: "superadmin-1" }]);
+
+      await service.create(input);
+
+      expect(eventEmitter.emit).toHaveBeenCalledWith("club.pending_verification", {
+        actorId: "user-4",
+        recipientId: "superadmin-1",
+        type: "CLUB_PENDING_VERIFICATION",
+        entityId: "user-4",
+      });
+    });
+  });
+
+  // ── verifyClub ────────────────────────────────────────────────────────────
+  describe("verifyClub", () => {
+    it("should mark the club as verified and notify its owner", async () => {
+      const mockClub = { id: "club-1", isVerified: false };
+      const mockUpdatedClub = { id: "club-1", isVerified: true, verificationStatus: "VERIFIED" };
+
+      prisma.club.findUnique.mockResolvedValue(mockClub);
+      prisma.club.update.mockResolvedValue(mockUpdatedClub);
+
+      const result = await service.verifyClub("club-1", "superadmin-1");
+
+      expect(prisma.club.update).toHaveBeenCalledWith({
+        where: { id: "club-1" },
+        data: { isVerified: true, verificationStatus: "VERIFIED" },
+        include: { user: true },
+      });
+      expect(eventEmitter.emit).toHaveBeenCalledWith("club.verified", {
+        actorId: "superadmin-1",
+        recipientId: "club-1",
+        type: "CLUB_VERIFIED",
+        entityId: "club-1",
+      });
+      expect(result).toEqual(mockUpdatedClub);
+    });
+
+    it("should throw if club is already verified", async () => {
+      prisma.club.findUnique.mockResolvedValue({ id: "club-1", isVerified: true });
+
+      await expect(service.verifyClub("club-1", "superadmin-1")).rejects.toThrow("already verified");
     });
   });
 

@@ -140,7 +140,7 @@ describe("JobsService", () => {
       const mockApplication = {
         id: "app-1",
         ...applicationData,
-        jobOpportunity: { club: { adminId: "club-admin-1" } },
+        jobOpportunity: { club: { id: "club-admin-1" } },
       };
       prisma.jobApplication.create.mockResolvedValue(mockApplication);
 
@@ -207,7 +207,7 @@ describe("JobsService", () => {
       prisma.jobApplication.findUnique.mockResolvedValue({
         id: applicationId,
         userId: "user-1",
-        jobOpportunity: { club: { adminId: currentUserId } },
+        jobOpportunity: { club: { id: currentUserId } },
       });
       prisma.jobApplication.update.mockResolvedValue({ id: applicationId, status: "ACCEPTED" });
 
@@ -224,7 +224,7 @@ describe("JobsService", () => {
       prisma.jobApplication.findUnique.mockResolvedValue({
         id: applicationId,
         userId: "user-1",
-        jobOpportunity: { club: { adminId: "someone-else" } },
+        jobOpportunity: { club: { id: "someone-else" } },
       });
 
       await expect(

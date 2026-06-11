@@ -45,7 +45,7 @@ model User {
 
   // Relations
   club            Club?        @relation("ClubMembers", fields: [clubId], references: [id])
-  adminClub       Club?        @relation("ClubAdmin")
+  clubProfile     Club?        @relation("ClubProfile")
   clubs           ClubMember[] @relation("UserClubMemberships")
   invitationsSent ClubMember[] @relation("InvitedBy")
 
@@ -77,6 +77,10 @@ model User {
   likesGiven    Like[] @relation("LikerUser")
   likesReceived Like[] @relation("LikedUser")
 
+  // Reports
+  reportsFiled    Report[] @relation("ReportsFiled")
+  reportsReviewed Report[] @relation("ReportsReviewed")
+
   @@index([email])
   @@index([username])
   @@index([clubId])
@@ -87,8 +91,10 @@ model User {
   @@index([role, country, city, position])
 }
 
+/// A Club is the club profile of a single User with role CLUB.
+/// Club.id == User.id (1:1 identity relation) — there is no separate admin user.
 model Club {
-  id                 String             @id @default(uuid())
+  id                 String             @id
   name               String             @unique
   logo               String?
   coverImage         String?
@@ -112,9 +118,8 @@ model Club {
   benefits           String[]           @default([])
   videos             String[]           @default([])
 
-  /// The User (with role CLUB) who manages this club.
-  adminId   String?  @unique
-  admin     User?    @relation("ClubAdmin", fields: [adminId], references: [id], onDelete: SetNull)
+  /// The User (role CLUB) this club profile belongs to. Same id as the user.
+  user      User     @relation("ClubProfile", fields: [id], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -132,7 +137,6 @@ model Club {
   @@index([name])
   @@index([country, city])
   @@index([league])
-  @@index([adminId])
 }
 
 model Team {
@@ -312,6 +316,9 @@ enum NotificationType {
   NEW_FOLLOWER
   NEW_LIKE
   APPLICATION_RECEIVED
+  CLUB_PENDING_VERIFICATION
+  CLUB_VERIFIED
+  REPORT_RECEIVED
 }
 
 model Notification {
@@ -328,6 +335,53 @@ model Notification {
 
   @@index([recipientId, isRead])
   @@index([recipientId, createdAt])
+}
+
+enum ReportTargetType {
+  USER
+  CLUB
+  POST
+  JOB_OPPORTUNITY
+  MESSAGE
+  NEWS_ARTICLE
+}
+
+enum ReportReason {
+  SPAM
+  HARASSMENT
+  INAPPROPRIATE_CONTENT
+  FAKE_PROFILE
+  SCAM
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  ACTION_TAKEN
+  DISMISSED
+}
+
+/// User-submitted reports against any reportable entity (user, club, post, etc).
+model Report {
+  id          String           @id @default(uuid())
+  reporterId  String
+  targetType  ReportTargetType
+  targetId    String
+  reason      ReportReason
+  description String?          @db.Text
+  status      ReportStatus     @default(PENDING)
+  reviewedById String?
+  reviewedAt  DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  reporter   User  @relation("ReportsFiled", fields: [reporterId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("ReportsReviewed", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@unique([reporterId, targetType, targetId])
+  @@index([targetType, targetId])
+  @@index([status, createdAt])
 }
 
 model SavedJob {

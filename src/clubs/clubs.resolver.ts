@@ -1,4 +1,5 @@
 import { Resolver, Query, Mutation, Args, Context, ResolveField, Parent, ID } from "@nestjs/graphql";
+import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { ClubsService } from "./clubs.service";
 import { NotificationsGateway } from "../notifications/notifications.gateway";
 import { CloudinaryService } from "../uploads/cloudinary.service";
@@ -21,6 +22,15 @@ export class ClubsResolver {
     );
   }
 
+  private requireSuperAdmin(context: any): { userId: string; role: string } {
+    const currentUser = this.getCurrentUser(context);
+    if (!currentUser) throw new UnauthorizedException("Authentication required");
+    if (currentUser.role !== "SUPERADMIN") {
+      throw new ForbiddenException("Super admin access required");
+    }
+    return currentUser;
+  }
+
   @Query()
   clubs() {
     return this.clubsService.findAll();
@@ -39,10 +49,10 @@ export class ClubsResolver {
 
   @Mutation()
   async createClub(
+    @Context() context: any,
     @Args("name") name: string,
     @Args("city") city: string,
     @Args("country") country: string,
-    @Args("adminId") adminId: string,
     @Args("location", { nullable: true }) location?: string,
     @Args("benefits", { type: () => [String], nullable: true }) benefits?: string[],
     @Args("instagram", { nullable: true }) instagram?: string,
@@ -50,10 +60,21 @@ export class ClubsResolver {
     @Args("facebook", { nullable: true }) facebook?: string,
     @Args("tiktok", { nullable: true }) tiktok?: string
   ) {
-    return this.clubsService.create({ 
-      name, city, country, adminId, location, benefits, 
-      instagram, twitter, facebook, tiktok 
+    const currentUser = this.getCurrentUser(context);
+    if (!currentUser) throw new UnauthorizedException("Authentication required");
+
+    return this.clubsService.create({
+      userId: currentUser.userId,
+      name, city, country, benefits,
+      instagram, twitter, facebook, tiktok
     });
+  }
+
+  /** Super-admin only: approves a club's verification request. */
+  @Mutation()
+  async verifyClub(@Context() context: any, @Args("clubId") clubId: string) {
+    const currentUser = this.requireSuperAdmin(context);
+    return this.clubsService.verifyClub(clubId, currentUser.userId);
   }
 
   @Mutation()

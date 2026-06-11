@@ -36,10 +36,10 @@ export class SocialService {
 
     const club = await this.prisma.club.findUnique({
       where: { id: entityId },
-      select: { adminId: true },
+      select: { id: true },
     });
     if (!club) throw new NotFoundException("Club not found");
-    if (club.adminId !== currentUserId) {
+    if (club.id !== currentUserId) {
       throw new ForbiddenException("You are not the admin of this club");
     }
   }

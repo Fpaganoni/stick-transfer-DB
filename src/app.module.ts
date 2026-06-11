@@ -21,6 +21,7 @@ import { UploadsModule } from "./uploads/uploads.module";
 import { HealthModule } from "./health/health.module";
 import { SocialModule } from "./social/social.module";
 import { NewsModule } from "./news/news.module";
+import { ReportModule } from "./report/report.module";
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { NewsModule } from "./news/news.module";
     HealthModule,
     SocialModule,
     NewsModule,
+    ReportModule,
   ],
   providers: [
     PrismaService,
