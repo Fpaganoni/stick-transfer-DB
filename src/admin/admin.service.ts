@@ -38,7 +38,7 @@ export class AdminService {
       activeClubMembershipsCount,
       newUsersLast7Days,
       newUsersLast30Days,
-    ] = await Promise.all([
+    ] = await this.prisma.$transaction([
       this.prisma.user.count(),
       this.prisma.user.count({ where: { role: "PLAYER" } }),
       this.prisma.user.count({ where: { role: "COACH" } }),

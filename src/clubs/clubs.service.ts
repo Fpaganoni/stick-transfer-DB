@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from "@nestjs/common";
 import { EventEmitter2 } from "@nestjs/event-emitter";
-import { NotificationType } from "@prisma/client";
+import { NotificationType, VerificationStatus } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 
 @Injectable()
@@ -10,13 +10,18 @@ export class ClubsService {
     private eventEmitter: EventEmitter2,
   ) {}
 
-  findAll() {
-    return this.prisma.club.findMany({
+  async findAll() {
+    const clubs = await this.prisma.club.findMany({
       include: {
         teams: true,
         user: true,
+        clubMembers: {
+          include: { user: true },
+        },
       },
     });
+
+    return clubs.map((club) => this.withMappedMembers(club));
   }
 
   async findById(id: string) {
@@ -32,6 +37,10 @@ export class ClubsService {
 
     if (!club) return null;
 
+    return this.withMappedMembers(club);
+  }
+
+  private withMappedMembers<T extends { clubMembers: any[] }>(club: T) {
     return {
       ...club,
       members: club.clubMembers.map((member) => ({
@@ -159,6 +168,34 @@ export class ClubsService {
       type: NotificationType.CLUB_VERIFIED,
       entityId: clubId,
     });
+
+    return updated;
+  }
+
+  /** Super-admin only: sets a club's verification status directly. */
+  async setVerificationStatus(clubId: string, status: string, superadminId: string) {
+    const club = await this.prisma.club.findUnique({ where: { id: clubId } });
+    if (!club) throw new BadRequestException(`Club ${clubId} not found`);
+
+    const wasVerified = club.isVerified;
+
+    const updated = await this.prisma.club.update({
+      where: { id: clubId },
+      data: {
+        verificationStatus: status as VerificationStatus,
+        isVerified: status === "VERIFIED",
+      },
+      include: { user: true },
+    });
+
+    if (status === "VERIFIED" && !wasVerified) {
+      this.eventEmitter.emit("club.verified", {
+        actorId: superadminId,
+        recipientId: clubId,
+        type: NotificationType.CLUB_VERIFIED,
+        entityId: clubId,
+      });
+    }
 
     return updated;
   }

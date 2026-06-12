@@ -52,7 +52,7 @@ type Club {
   facebook: String
   tiktok: String
   isVerified: Boolean!
-  verificationStatus: String!
+  verificationStatus: VerificationStatus!
   verificationDoc: String
   benefits: [String!]!
   videos: [String!]!
@@ -246,6 +246,13 @@ enum OAuthProvider {
   FACEBOOK
   LINKEDIN
   TWITTER
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
 }
 
 type Follow {
@@ -487,6 +494,8 @@ type Mutation {
   ): Club!
   """Super admin only: approves a club's verification request."""
   verifyClub(clubId: ID!): Club!
+  """Super admin only: sets a club's verification status directly."""
+  adminSetClubVerification(clubId: ID!, status: VerificationStatus!): Club!
   createTeam(clubId: String!, name: String!, category: String!): Team!
   invitePlayerToClub(
     clubId: String!
