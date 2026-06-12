@@ -1,0 +1,34 @@
+type AdminDashboardStats {
+  totalUsersCount: Int!
+  playersCount: Int!
+  coachesCount: Int!
+  clubsCount: Int!
+  superAdminsCount: Int!
+  activeUsersCount: Int!
+  verifiedClubsCount: Int!
+  pendingVerificationClubsCount: Int!
+  unverifiedClubsCount: Int!
+  rejectedClubsCount: Int!
+  openJobsCount: Int!
+  closedJobsCount: Int!
+  filledJobsCount: Int!
+  totalApplicationsCount: Int!
+  pendingApplicationsCount: Int!
+  acceptedApplicationsCount: Int!
+  rejectedApplicationsCount: Int!
+  totalReportsCount: Int!
+  pendingReportsCount: Int!
+  reviewedReportsCount: Int!
+  actionTakenReportsCount: Int!
+  publishedNewsCount: Int!
+  draftNewsCount: Int!
+  pendingClubMembershipsCount: Int!
+  activeClubMembershipsCount: Int!
+  newUsersLast7Days: Int!
+  newUsersLast30Days: Int!
+}
+
+extend type Query {
+  """Super admin only: aggregated metrics for the admin dashboard."""
+  adminDashboardStats: AdminDashboardStats!
+}
