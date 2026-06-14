@@ -1,3 +1,10 @@
+enum Role {
+  PLAYER
+  COACH
+  CLUB
+  SUPERADMIN
+}
+
 type User {
   id: ID!
   email: String!
@@ -8,7 +15,7 @@ type User {
   coverImagePosition: String
   bio: String
   position: String
-  role: String!
+  role: Role!
   country: String
   city: String
   clubId: String

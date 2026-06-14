@@ -48,7 +48,7 @@ describe("ClubsService", () => {
   // ── findAll ───────────────────────────────────────────────────────────────
   describe("findAll", () => {
     it("should return all clubs including their teams", async () => {
-      const mockClubs = [{ id: "club-1", name: "HC Barcelona", teams: [] }];
+      const mockClubs = [{ id: "club-1", name: "HC Barcelona", teams: [], clubMembers: [] }];
       prisma.club.findMany.mockResolvedValue(mockClubs);
 
       const result = await service.findAll();
@@ -57,9 +57,12 @@ describe("ClubsService", () => {
         include: {
           teams: true,
           user: true,
+          clubMembers: {
+            include: { user: true },
+          },
         },
       });
-      expect(result).toEqual(mockClubs);
+      expect(result).toEqual([{ ...mockClubs[0], members: [] }]);
     });
   });
 

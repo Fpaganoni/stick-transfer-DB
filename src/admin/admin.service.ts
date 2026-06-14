@@ -1,9 +1,24 @@
 import { Injectable } from "@nestjs/common";
+import { Role } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 
 @Injectable()
 export class AdminService {
   constructor(private prisma: PrismaService) {}
+
+  async changeUserRole(userId: string, role: Role) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { role },
+    });
+  }
+
+  async setUserVerified(userId: string, verified: boolean) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { isVerified: verified },
+    });
+  }
 
   async getDashboardStats() {
     const now = new Date();

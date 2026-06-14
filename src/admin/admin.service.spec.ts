@@ -3,7 +3,8 @@ import { AdminService } from "./admin.service";
 import { PrismaService } from "../prisma.service";
 
 const mockPrismaService = {
-  user: { count: jest.fn() },
+  $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
+  user: { count: jest.fn(), update: jest.fn() },
   club: { count: jest.fn() },
   jobOpportunity: { count: jest.fn() },
   jobApplication: { count: jest.fn() },
@@ -18,7 +19,10 @@ describe("AdminService", () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [AdminService, { provide: PrismaService, useValue: mockPrismaService }],
+      providers: [
+        AdminService,
+        { provide: PrismaService, useValue: mockPrismaService },
+      ],
     }).compile();
 
     service = module.get<AdminService>(AdminService);
@@ -39,11 +43,21 @@ describe("AdminService", () => {
       await service.getDashboardStats();
 
       expect(prisma.user.count).toHaveBeenCalledWith();
-      expect(prisma.user.count).toHaveBeenCalledWith({ where: { role: "PLAYER" } });
-      expect(prisma.user.count).toHaveBeenCalledWith({ where: { role: "COACH" } });
-      expect(prisma.user.count).toHaveBeenCalledWith({ where: { role: "CLUB" } });
-      expect(prisma.user.count).toHaveBeenCalledWith({ where: { role: "SUPERADMIN" } });
-      expect(prisma.user.count).toHaveBeenCalledWith({ where: { isActive: true } });
+      expect(prisma.user.count).toHaveBeenCalledWith({
+        where: { role: "PLAYER" },
+      });
+      expect(prisma.user.count).toHaveBeenCalledWith({
+        where: { role: "COACH" },
+      });
+      expect(prisma.user.count).toHaveBeenCalledWith({
+        where: { role: "CLUB" },
+      });
+      expect(prisma.user.count).toHaveBeenCalledWith({
+        where: { role: "SUPERADMIN" },
+      });
+      expect(prisma.user.count).toHaveBeenCalledWith({
+        where: { isActive: true },
+      });
       expect(prisma.user.count).toHaveBeenCalledWith({
         where: { createdAt: { gte: expect.any(Date) } },
       });
@@ -52,18 +66,32 @@ describe("AdminService", () => {
     it("should query clubs grouped by verification status", async () => {
       await service.getDashboardStats();
 
-      expect(prisma.club.count).toHaveBeenCalledWith({ where: { verificationStatus: "VERIFIED" } });
-      expect(prisma.club.count).toHaveBeenCalledWith({ where: { verificationStatus: "PENDING" } });
-      expect(prisma.club.count).toHaveBeenCalledWith({ where: { verificationStatus: "UNVERIFIED" } });
-      expect(prisma.club.count).toHaveBeenCalledWith({ where: { verificationStatus: "REJECTED" } });
+      expect(prisma.club.count).toHaveBeenCalledWith({
+        where: { verificationStatus: "VERIFIED" },
+      });
+      expect(prisma.club.count).toHaveBeenCalledWith({
+        where: { verificationStatus: "PENDING" },
+      });
+      expect(prisma.club.count).toHaveBeenCalledWith({
+        where: { verificationStatus: "UNVERIFIED" },
+      });
+      expect(prisma.club.count).toHaveBeenCalledWith({
+        where: { verificationStatus: "REJECTED" },
+      });
     });
 
     it("should query job opportunities grouped by status", async () => {
       await service.getDashboardStats();
 
-      expect(prisma.jobOpportunity.count).toHaveBeenCalledWith({ where: { status: "OPEN" } });
-      expect(prisma.jobOpportunity.count).toHaveBeenCalledWith({ where: { status: "CLOSED" } });
-      expect(prisma.jobOpportunity.count).toHaveBeenCalledWith({ where: { status: "FILLED" } });
+      expect(prisma.jobOpportunity.count).toHaveBeenCalledWith({
+        where: { status: "OPEN" },
+      });
+      expect(prisma.jobOpportunity.count).toHaveBeenCalledWith({
+        where: { status: "CLOSED" },
+      });
+      expect(prisma.jobOpportunity.count).toHaveBeenCalledWith({
+        where: { status: "FILLED" },
+      });
     });
 
     it("should query job applications grouped by status, mapping UNDER_REVIEW into pending", async () => {
@@ -73,31 +101,49 @@ describe("AdminService", () => {
       expect(prisma.jobApplication.count).toHaveBeenCalledWith({
         where: { status: { in: ["PENDING", "UNDER_REVIEW"] } },
       });
-      expect(prisma.jobApplication.count).toHaveBeenCalledWith({ where: { status: "ACCEPTED" } });
-      expect(prisma.jobApplication.count).toHaveBeenCalledWith({ where: { status: "REJECTED" } });
+      expect(prisma.jobApplication.count).toHaveBeenCalledWith({
+        where: { status: "ACCEPTED" },
+      });
+      expect(prisma.jobApplication.count).toHaveBeenCalledWith({
+        where: { status: "REJECTED" },
+      });
     });
 
     it("should query reports grouped by status", async () => {
       await service.getDashboardStats();
 
       expect(prisma.report.count).toHaveBeenCalledWith();
-      expect(prisma.report.count).toHaveBeenCalledWith({ where: { status: "PENDING" } });
-      expect(prisma.report.count).toHaveBeenCalledWith({ where: { status: "REVIEWED" } });
-      expect(prisma.report.count).toHaveBeenCalledWith({ where: { status: "ACTION_TAKEN" } });
+      expect(prisma.report.count).toHaveBeenCalledWith({
+        where: { status: "PENDING" },
+      });
+      expect(prisma.report.count).toHaveBeenCalledWith({
+        where: { status: "REVIEWED" },
+      });
+      expect(prisma.report.count).toHaveBeenCalledWith({
+        where: { status: "ACTION_TAKEN" },
+      });
     });
 
     it("should query news articles grouped by published state", async () => {
       await service.getDashboardStats();
 
-      expect(prisma.newsArticle.count).toHaveBeenCalledWith({ where: { isPublished: true } });
-      expect(prisma.newsArticle.count).toHaveBeenCalledWith({ where: { isPublished: false } });
+      expect(prisma.newsArticle.count).toHaveBeenCalledWith({
+        where: { isPublished: true },
+      });
+      expect(prisma.newsArticle.count).toHaveBeenCalledWith({
+        where: { isPublished: false },
+      });
     });
 
     it("should query club memberships grouped by status", async () => {
       await service.getDashboardStats();
 
-      expect(prisma.clubMember.count).toHaveBeenCalledWith({ where: { status: "PENDING" } });
-      expect(prisma.clubMember.count).toHaveBeenCalledWith({ where: { status: "ACTIVE" } });
+      expect(prisma.clubMember.count).toHaveBeenCalledWith({
+        where: { status: "PENDING" },
+      });
+      expect(prisma.clubMember.count).toHaveBeenCalledWith({
+        where: { status: "ACTIVE" },
+      });
     });
 
     it("should return a single aggregated stats object", async () => {
@@ -125,6 +171,34 @@ describe("AdminService", () => {
           newUsersLast30Days: 10,
         }),
       );
+    });
+  });
+
+  describe("changeUserRole", () => {
+    it("should update a user's role", async () => {
+      prisma.user.update.mockResolvedValue({ id: "user-1", role: "COACH" });
+
+      const result = await service.changeUserRole("user-1", "COACH" as any);
+
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: "user-1" },
+        data: { role: "COACH" },
+      });
+      expect(result).toEqual({ id: "user-1", role: "COACH" });
+    });
+  });
+
+  describe("setUserVerified", () => {
+    it("should update a user's verified status", async () => {
+      prisma.user.update.mockResolvedValue({ id: "user-1", isVerified: true });
+
+      const result = await service.setUserVerified("user-1", true);
+
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: "user-1" },
+        data: { isVerified: true },
+      });
+      expect(result).toEqual({ id: "user-1", isVerified: true });
     });
   });
 });

@@ -32,3 +32,11 @@ extend type Query {
   """Super admin only: aggregated metrics for the admin dashboard."""
   adminDashboardStats: AdminDashboardStats!
 }
+
+extend type Mutation {
+  """Super admin only: changes a user's role."""
+  adminChangeUserRole(userId: ID!, role: Role!): User!
+
+  """Super admin only: sets a user's verified status."""
+  adminSetUserVerified(userId: ID!, verified: Boolean!): User!
+}
