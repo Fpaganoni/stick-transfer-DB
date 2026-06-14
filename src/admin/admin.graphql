@@ -39,4 +39,7 @@ extend type Mutation {
 
   """Super admin only: sets a user's verified status."""
   adminSetUserVerified(userId: ID!, verified: Boolean!): User!
+
+  """Super admin only: sets a user's active status (ban/unban)."""
+  adminSetUserActive(userId: ID!, active: Boolean!): User!
 }

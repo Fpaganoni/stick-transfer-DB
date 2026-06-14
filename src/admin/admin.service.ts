@@ -20,6 +20,13 @@ export class AdminService {
     });
   }
 
+  async setUserActive(userId: string, active: boolean) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { isActive: active },
+    });
+  }
+
   async getDashboardStats() {
     const now = new Date();
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);

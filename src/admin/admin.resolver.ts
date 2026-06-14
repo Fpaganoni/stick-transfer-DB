@@ -52,4 +52,14 @@ export class AdminResolver {
     this.requireSuperAdmin(context);
     return this.adminService.setUserVerified(userId, verified);
   }
+
+  @Mutation()
+  async adminSetUserActive(
+    @Context() context: any,
+    @Args("userId") userId: string,
+    @Args("active") active: boolean,
+  ) {
+    this.requireSuperAdmin(context);
+    return this.adminService.setUserActive(userId, active);
+  }
 }
