@@ -22,6 +22,7 @@ import { HealthModule } from "./health/health.module";
 import { SocialModule } from "./social/social.module";
 import { NewsModule } from "./news/news.module";
 import { ReportModule } from "./report/report.module";
+import { AdminModule } from "./admin/admin.module";
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { ReportModule } from "./report/report.module";
     SocialModule,
     NewsModule,
     ReportModule,
+    AdminModule,
   ],
   providers: [
     PrismaService,

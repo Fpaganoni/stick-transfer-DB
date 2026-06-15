@@ -77,6 +77,17 @@ export class ClubsResolver {
     return this.clubsService.verifyClub(clubId, currentUser.userId);
   }
 
+  /** Super-admin only: sets a club's verification status directly. */
+  @Mutation()
+  async adminSetClubVerification(
+    @Context() context: any,
+    @Args("clubId") clubId: string,
+    @Args("status") status: string,
+  ) {
+    const currentUser = this.requireSuperAdmin(context);
+    return this.clubsService.setVerificationStatus(clubId, status, currentUser.userId);
+  }
+
   @Mutation()
   async updateClub(
     @Args("id") id: string,
