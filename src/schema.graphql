@@ -37,6 +37,15 @@ type User {
   likesReceivedCount: Int!
   isFollowedByCurrentUser: Boolean!
   isLikedByCurrentUser: Boolean!
+  followers: [UserBasicInfo!]!
+  following: [UserBasicInfo!]!
+}
+
+type UserBasicInfo {
+  id: ID!
+  name: String!
+  username: String
+  avatar: String
 }
 
 type Club {
