@@ -61,7 +61,14 @@ export class SocialService {
 
     try {
       const follow = await this.prisma.follow.create({
-        data: { followerId, followerType, followingId, followingType },
+        data: {
+          followerId,
+          followerType,
+          followingId,
+          followingType,
+          followingUserId: followingType === 'USER' ? followingId : null,
+          followingClubId: followingType === 'CLUB' ? followingId : null,
+        },
       });
 
       if (followingType === "USER") {
@@ -137,7 +144,14 @@ export class SocialService {
 
     try {
       const like = await this.prisma.like.create({
-        data: { likerId, likerType, likedId, likedType },
+        data: {
+          likerId,
+          likerType,
+          likedId,
+          likedType,
+          likedUserId: likedType === 'USER' ? likedId : null,
+          likedClubId: likedType === 'CLUB' ? likedId : null,
+        },
       });
 
       if (likedType === "USER") {

@@ -399,16 +399,18 @@ model SavedJob {
 }
 
 model Follow {
-  id            String           @id @default(uuid())
-  followerId    String
-  followerType  FollowEntityType
-  followingId   String
-  followingType FollowEntityType
-  createdAt     DateTime         @default(now())
+  id              String           @id @default(uuid())
+  followerId      String
+  followerType    FollowEntityType
+  followingId     String
+  followingType   FollowEntityType
+  followingUserId String?
+  followingClubId String?
+  createdAt       DateTime         @default(now())
 
-  followerUser User? @relation("FollowerUser", fields: [followerId], references: [id], onDelete: Cascade, map: "Follow_followerUser_fkey")
-  followedUser User? @relation("FollowedUser", fields: [followingId], references: [id], onDelete: Cascade, map: "Follow_followedUser_fkey")
-  followedClub Club? @relation("FollowedClub", fields: [followingId], references: [id], onDelete: Cascade, map: "Follow_followedClub_fkey")
+  followerUser User? @relation("FollowerUser", fields: [followerId],      references: [id], onDelete: Cascade, map: "Follow_followerUser_fkey")
+  followedUser User? @relation("FollowedUser", fields: [followingUserId], references: [id], onDelete: Cascade, map: "Follow_followedUser_fkey")
+  followedClub Club? @relation("FollowedClub", fields: [followingClubId], references: [id], onDelete: Cascade, map: "Follow_followedClub_fkey")
 
   @@unique([followerId, followerType, followingId, followingType])
   @@index([followerId, followerType])
@@ -417,16 +419,18 @@ model Follow {
 
 /// Bidirectional profile likes between Player/Coach/Club profiles.
 model Like {
-  id        String         @id @default(uuid())
-  likerId   String
-  likerType LikeEntityType
-  likedId   String
-  likedType LikeEntityType
-  createdAt DateTime       @default(now())
+  id          String         @id @default(uuid())
+  likerId     String
+  likerType   LikeEntityType
+  likedId     String
+  likedType   LikeEntityType
+  likedUserId String?
+  likedClubId String?
+  createdAt   DateTime       @default(now())
 
-  likerUser User? @relation("LikerUser", fields: [likerId], references: [id], onDelete: Cascade, map: "Like_likerUser_fkey")
-  likedUser User? @relation("LikedUser", fields: [likedId], references: [id], onDelete: Cascade, map: "Like_likedUser_fkey")
-  likedClub Club? @relation("LikedClub", fields: [likedId], references: [id], onDelete: Cascade, map: "Like_likedClub_fkey")
+  likerUser User? @relation("LikerUser", fields: [likerId],     references: [id], onDelete: Cascade, map: "Like_likerUser_fkey")
+  likedUser User? @relation("LikedUser", fields: [likedUserId], references: [id], onDelete: Cascade, map: "Like_likedUser_fkey")
+  likedClub Club? @relation("LikedClub", fields: [likedClubId], references: [id], onDelete: Cascade, map: "Like_likedClub_fkey")
 
   @@unique([likerId, likerType, likedId, likedType])
   @@index([likerId, likerType])
