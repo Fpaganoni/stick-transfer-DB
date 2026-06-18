@@ -61,7 +61,14 @@ export class SocialService {
 
     try {
       const follow = await this.prisma.follow.create({
-        data: { followerId, followerType, followingId, followingType },
+        data: {
+          followerId,
+          followerType,
+          followingId,
+          followingType,
+          followingUserId: followingType === 'USER' ? followingId : null,
+          followingClubId: followingType === 'CLUB' ? followingId : null,
+        },
       });
 
       if (followingType === "USER") {
@@ -99,17 +106,25 @@ export class SocialService {
   }
 
   async getFollowers(entityType: EntityType, entityId: string) {
-    return this.prisma.follow.findMany({
+    const follows = await this.prisma.follow.findMany({
       where: { followingType: entityType, followingId: entityId },
       orderBy: { createdAt: "desc" },
+      include: {
+        followerUser: { select: { id: true, name: true, username: true, avatar: true } },
+      },
     });
+    return follows.map((f) => f.followerUser).filter(Boolean);
   }
 
   async getFollowing(entityType: EntityType, entityId: string) {
-    return this.prisma.follow.findMany({
+    const follows = await this.prisma.follow.findMany({
       where: { followerType: entityType, followerId: entityId },
       orderBy: { createdAt: "desc" },
+      include: {
+        followedUser: { select: { id: true, name: true, username: true, avatar: true } },
+      },
     });
+    return follows.map((f) => f.followedUser).filter(Boolean);
   }
 
   // ─── Likes ─────────────────────────────────────────────────────────────
@@ -129,7 +144,14 @@ export class SocialService {
 
     try {
       const like = await this.prisma.like.create({
-        data: { likerId, likerType, likedId, likedType },
+        data: {
+          likerId,
+          likerType,
+          likedId,
+          likedType,
+          likedUserId: likedType === 'USER' ? likedId : null,
+          likedClubId: likedType === 'CLUB' ? likedId : null,
+        },
       });
 
       if (likedType === "USER") {

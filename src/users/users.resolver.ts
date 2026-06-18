@@ -273,6 +273,16 @@ export class UsersResolver {
   }
 
   @ResolveField()
+  async followers(@Parent() user: any) {
+    return this.socialService.getFollowers("USER", user.id);
+  }
+
+  @ResolveField()
+  async following(@Parent() user: any) {
+    return this.socialService.getFollowing("USER", user.id);
+  }
+
+  @ResolveField()
   async likesReceivedCount(@Parent() user: any) {
     return this.socialService.countLikesReceived("USER", user.id);
   }
