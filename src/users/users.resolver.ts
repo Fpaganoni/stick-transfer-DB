@@ -8,13 +8,14 @@ import {
   Parent,
   ID,
 } from "@nestjs/graphql";
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, UseGuards } from "@nestjs/common";
 import { UsersService } from "./users.service";
 import { AuthService } from "../auth/auth.service";
 import { CloudinaryService } from "../uploads/cloudinary.service";
 import { PrismaService } from "../prisma.service";
 import { ClubsService } from "../clubs/clubs.service";
 import { SocialService } from "../social/social.service";
+import { GqlAuthGuard } from "../auth/gql-auth.guard";
 
 @Resolver("User")
 export class UsersResolver {
@@ -172,9 +173,12 @@ export class UsersResolver {
     return true;
   }
 
+  @UseGuards(GqlAuthGuard)
   @Query(() => Object)
-  async me(@Args("id", { type: () => ID }) id: string) {
-    return this.usersService.findById(id);
+  async me(@Context() context: any) {
+    const currentUser = this.getCurrentUser(context);
+    if (!currentUser) throw new Error("Unauthenticated");
+    return this.usersService.findById(currentUser.userId);
   }
 
   @Query(() => [Object])
