@@ -2,6 +2,8 @@ import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { PrismaService } from "../prisma.service";
 import * as bcrypt from "bcrypt";
+import { Response } from "express";
+import { AUTH_COOKIE_NAME, authCookieOptions, expiresInToMs } from "./auth.constants";
 
 /**
  * AuthService — handles all authentication logic:
@@ -44,17 +46,42 @@ export class AuthService {
   }
 
   /**
-   * Decodes and verifies the Bearer token from a GraphQL context's Authorization
-   * header, returning the authenticated user's id and role — or null if the
-   * header is missing or the token is invalid/expired.
+   * Sets the session JWT as an httpOnly cookie on the GraphQL/REST response.
+   * The token never touches the response body or a redirect URL.
+   */
+  setAuthCookie(res: Response, accessToken: string) {
+    res.cookie(
+      AUTH_COOKIE_NAME,
+      accessToken,
+      authCookieOptions(expiresInToMs(process.env.JWT_EXPIRES_IN)),
+    );
+  }
+
+  /** Clears the session cookie on logout. */
+  clearAuthCookie(res: Response) {
+    res.clearCookie(AUTH_COOKIE_NAME, { path: "/" });
+  }
+
+  /**
+   * Decodes and verifies the JWT from the request — cookie first, falling back
+   * to the Authorization: Bearer header during the cookie-migration rollout —
+   * returning the authenticated user's id and role, or null if absent/invalid.
    *
    * Used by resolvers that need to know "who's asking" (e.g. isLikedByCurrentUser,
    * follow/like/save mutations, requireSuperAdmin) without enforcing a hard guard.
    */
-  getUserFromAuthHeader(authHeader?: string): { userId: string; role: string } | null {
-    if (!authHeader?.startsWith("Bearer ")) return null;
+  getUserFromRequest(req?: { cookies?: Record<string, string>; headers?: { authorization?: string } }): {
+    userId: string;
+    role: string;
+  } | null {
+    const token =
+      req?.cookies?.[AUTH_COOKIE_NAME] ??
+      (req?.headers?.authorization?.startsWith("Bearer ")
+        ? req.headers.authorization.slice(7)
+        : null);
+    if (!token) return null;
     try {
-      const payload = this.jwtService.verify(authHeader.slice(7));
+      const payload = this.jwtService.verify(token);
       return { userId: payload.sub, role: payload.role };
     } catch {
       return null;

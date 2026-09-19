@@ -8,7 +8,7 @@ import depthLimit from "graphql-depth-limit";
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,
       typePaths: ["./**/*.graphql"],
-      context: ({ req }) => ({ req }),
+      context: ({ req, res }) => ({ req, res }),
       playground: true,
       validationRules: [depthLimit(5)], // Protect against deeply nested malicious queries
       formatError: (error: any) => {

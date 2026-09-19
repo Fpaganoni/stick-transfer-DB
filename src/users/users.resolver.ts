@@ -29,13 +29,12 @@ export class UsersResolver {
   ) {}
 
   private getCurrentUser(context: any): { userId: string; role: string } | null {
-    return this.authService.getUserFromAuthHeader(
-      context?.req?.headers?.authorization,
-    );
+    return this.authService.getUserFromRequest(context?.req);
   }
 
-  @Mutation(() => String)
+  @Mutation(() => Object)
   async register(
+    @Context() context: any,
     @Args("email") email: string,
     @Args("name") name: string,
     @Args("username", { nullable: true }) username?: string,
@@ -92,7 +91,8 @@ export class UsersResolver {
       }
 
       const token = await this.authService.login(user);
-      return token.access_token;
+      this.authService.setAuthCookie(context.res, token.access_token);
+      return user;
     } catch (error) {
       if (error.code === "P2002") {
         throw new BadRequestException(`${error.meta.target[0]} already exists`);
@@ -101,15 +101,23 @@ export class UsersResolver {
     }
   }
 
-  @Mutation(() => String)
+  @Mutation(() => Object)
   async login(
+    @Context() context: any,
     @Args("email") email: string,
     @Args("password") password: string,
   ) {
     const user = await this.authService.validateUser(email, password);
     if (!user) throw new Error("Invalid credentials");
     const t = await this.authService.login(user);
-    return t.access_token;
+    this.authService.setAuthCookie(context.res, t.access_token);
+    return user;
+  }
+
+  @Mutation(() => Boolean)
+  async logout(@Context() context: any) {
+    this.authService.clearAuthCookie(context.res);
+    return true;
   }
 
   @Mutation(() => Boolean)

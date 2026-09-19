@@ -466,8 +466,9 @@ type Mutation {
     position: String
     dateOfBirth: String
     clubName: String
-  ): String!
-  login(email: String!, password: String!): String!
+  ): User!
+  login(email: String!, password: String!): User!
+  logout: Boolean!
   uploadAvatar(userId: ID!, base64: String!): Boolean!
   uploadCoverImage(userId: ID!, base64: String!): Boolean!
   uploadCV(userId: ID!, base64: String!): String!

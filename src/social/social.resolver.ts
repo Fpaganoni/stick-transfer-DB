@@ -13,9 +13,7 @@ export class SocialResolver {
   ) {}
 
   private requireUser(context: any): { userId: string; role: string } {
-    const user = this.authService.getUserFromAuthHeader(
-      context?.req?.headers?.authorization,
-    );
+    const user = this.authService.getUserFromRequest(context?.req);
     if (!user) throw new UnauthorizedException("Authentication required");
     return user;
   }

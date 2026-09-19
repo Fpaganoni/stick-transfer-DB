@@ -20,9 +20,7 @@ export class JobsResolver {
   ) {}
 
   private getCurrentUser(context: any): { userId: string; role: string } | null {
-    return this.authService.getUserFromAuthHeader(
-      context?.req?.headers?.authorization,
-    );
+    return this.authService.getUserFromRequest(context?.req);
   }
 
   private requireUser(context: any): { userId: string; role: string } {

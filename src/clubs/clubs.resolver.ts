@@ -17,9 +17,7 @@ export class ClubsResolver {
   ) {}
 
   private getCurrentUser(context: any): { userId: string; role: string } | null {
-    return this.authService.getUserFromAuthHeader(
-      context?.req?.headers?.authorization,
-    );
+    return this.authService.getUserFromRequest(context?.req);
   }
 
   private requireSuperAdmin(context: any): { userId: string; role: string } {

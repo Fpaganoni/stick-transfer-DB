@@ -1,5 +1,6 @@
 import { Controller, Get, Req, Res, UseGuards } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
+import { AuthService } from "./auth.service";
 
 /**
  * AuthController — REST endpoints for OAuth authentication flows.
@@ -13,11 +14,14 @@ import { AuthGuard } from "@nestjs/passport";
  *  GET  /auth/google           — Initiates Google OAuth2 flow (browser redirect)
  *  GET  /auth/google/callback  — Google redirects here after user consents
  *
- * After successful OAuth, the user is redirected to /oauth-redirect?token=<JWT>
- * The frontend reads the token from the query param and stores it for API calls.
+ * After successful OAuth, the JWT is set as an httpOnly session cookie and
+ * the user is redirected to /oauth-redirect with no sensitive data in the URL.
+ * The frontend confirms the session by calling the `me` query.
  */
 @Controller("auth")
 export class AuthController {
+  constructor(private authService: AuthService) {}
+
   // ─── Google ────────────────────────────────────────────────────────────────
 
   /**
@@ -40,10 +44,14 @@ export class AuthController {
   @UseGuards(AuthGuard("google"))
   async googleAuthRedirect(@Req() req: any, @Res() res: any) {
     const token = (req.user as any)?.access_token ?? null;
-    // Redirect to the Next.js frontend OAuth landing page with the JWT.
+    if (token) {
+      this.authService.setAuthCookie(res, token);
+    }
+    // Redirect to the Next.js frontend OAuth landing page — no token in the URL,
+    // the session cookie was just set above.
     // Frontend route: http://localhost:3000/oauth-redirect (app/[locale]/oauth-redirect/page.tsx)
     res.redirect(
-      `${process.env.FRONTEND_URL || "http://localhost:3000"}/oauth-redirect?token=${token}`,
+      `${process.env.FRONTEND_URL || "http://localhost:3000"}/oauth-redirect`,
     );
   }
 }

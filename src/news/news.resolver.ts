@@ -20,9 +20,7 @@ export class NewsResolver {
   ) {}
 
   private async requireSuperAdmin(context: any): Promise<{ userId: string; role: string }> {
-    const currentUser = this.authService.getUserFromAuthHeader(
-      context?.req?.headers?.authorization,
-    );
+    const currentUser = this.authService.getUserFromRequest(context?.req);
     if (!currentUser) throw new UnauthorizedException("Authentication required");
     if (currentUser.role !== "SUPERADMIN") {
       throw new ForbiddenException("Super admin access required");

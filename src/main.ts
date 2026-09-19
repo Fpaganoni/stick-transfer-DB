@@ -3,6 +3,7 @@ import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
 import { ValidationPipe } from "@nestjs/common";
 import * as bodyParser from "body-parser";
+import cookieParser from "cookie-parser";
 import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter";
 
 async function bootstrap() {
@@ -13,6 +14,7 @@ async function bootstrap() {
 
   app.use(bodyParser.json({ limit: "2mb" }));
   app.use(bodyParser.urlencoded({ extended: true, limit: "2mb" }));
+  app.use(cookieParser());
 
   // Enable CORS for frontend dynamically
   const baseOrigins = ["http://localhost:3000", "http://localhost:3001"];
