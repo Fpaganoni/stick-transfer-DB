@@ -384,7 +384,7 @@ type Query {
   users: [User!]!
   user(id: ID!): User
   getUserByUsername(username: String!): User
-  me(id: ID!): User
+  me: User
   players: [User!]!
   coaches: [User!]!
 

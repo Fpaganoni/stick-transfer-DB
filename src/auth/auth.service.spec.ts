@@ -3,6 +3,7 @@ import { JwtService } from "@nestjs/jwt";
 import { UnauthorizedException } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { PrismaService } from "../prisma.service";
+import { AUTH_COOKIE_NAME } from "./auth.constants";
 import * as bcrypt from "bcrypt";
 
 // Mock bcrypt to avoid actual hashing in unit tests (slow + unnecessary)
@@ -222,6 +223,113 @@ describe("AuthService", () => {
       });
 
       expect(result).toEqual({ access_token: "mocked-jwt-token" });
+    });
+  });
+
+  // ── setAuthCookie ─────────────────────────────────────────────────────────
+  describe("setAuthCookie", () => {
+    const mockRes = { cookie: jest.fn() } as any;
+
+    afterEach(() => {
+      delete process.env.NODE_ENV;
+      delete process.env.JWT_EXPIRES_IN;
+    });
+
+    it("sets the session cookie with the correct name and token", () => {
+      service.setAuthCookie(mockRes, "signed-jwt-token");
+
+      expect(mockRes.cookie).toHaveBeenCalledWith(
+        AUTH_COOKIE_NAME,
+        "signed-jwt-token",
+        expect.any(Object),
+      );
+    });
+
+    it("uses secure+sameSite=none cookie options in production", () => {
+      process.env.NODE_ENV = "production";
+
+      service.setAuthCookie(mockRes, "signed-jwt-token");
+
+      const options = mockRes.cookie.mock.calls[0][2];
+      expect(options).toMatchObject({
+        httpOnly: true,
+        secure: true,
+        sameSite: "none",
+        path: "/",
+      });
+    });
+
+    it("relaxes to non-secure+lax cookie options outside production (HTTP dev workaround)", () => {
+      process.env.NODE_ENV = "development";
+
+      service.setAuthCookie(mockRes, "signed-jwt-token");
+
+      const options = mockRes.cookie.mock.calls[0][2];
+      expect(options).toMatchObject({
+        httpOnly: true,
+        secure: false,
+        sameSite: "lax",
+        path: "/",
+      });
+    });
+  });
+
+  // ── clearAuthCookie ───────────────────────────────────────────────────────
+  describe("clearAuthCookie", () => {
+    it("clears the session cookie on the same path it was set on", () => {
+      const mockRes = { clearCookie: jest.fn() } as any;
+
+      service.clearAuthCookie(mockRes);
+
+      expect(mockRes.clearCookie).toHaveBeenCalledWith(AUTH_COOKIE_NAME, { path: "/" });
+    });
+  });
+
+  // ── getUserFromRequest ────────────────────────────────────────────────────
+  describe("getUserFromRequest", () => {
+    it("reads the JWT from the session cookie and returns userId/role", () => {
+      (mockJwtService as any).verify = jest
+        .fn()
+        .mockReturnValue({ sub: "user-1", role: "PLAYER" });
+
+      const result = service.getUserFromRequest({
+        cookies: { [AUTH_COOKIE_NAME]: "cookie-token" },
+      });
+
+      expect((mockJwtService as any).verify).toHaveBeenCalledWith("cookie-token");
+      expect(result).toEqual({ userId: "user-1", role: "PLAYER" });
+    });
+
+    it("falls back to the Authorization Bearer header when no cookie is present", () => {
+      (mockJwtService as any).verify = jest
+        .fn()
+        .mockReturnValue({ sub: "user-2", role: "COACH" });
+
+      const result = service.getUserFromRequest({
+        cookies: {},
+        headers: { authorization: "Bearer header-token" },
+      });
+
+      expect((mockJwtService as any).verify).toHaveBeenCalledWith("header-token");
+      expect(result).toEqual({ userId: "user-2", role: "COACH" });
+    });
+
+    it("returns null when neither cookie nor header is present", () => {
+      const result = service.getUserFromRequest({ cookies: {} });
+
+      expect(result).toBeNull();
+    });
+
+    it("returns null when the token is invalid or expired", () => {
+      (mockJwtService as any).verify = jest.fn().mockImplementation(() => {
+        throw new Error("jwt expired");
+      });
+
+      const result = service.getUserFromRequest({
+        cookies: { [AUTH_COOKIE_NAME]: "bad-token" },
+      });
+
+      expect(result).toBeNull();
     });
   });
 });
