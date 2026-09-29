@@ -103,6 +103,8 @@ model Club {
   bio                String?
   city               String
   country            String
+  managedByFirstName String
+  managedByLastName  String
   league             String?
   foundedYear        Int?
   email              String?

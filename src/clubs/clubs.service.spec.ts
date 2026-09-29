@@ -69,7 +69,14 @@ describe("ClubsService", () => {
   // ── create ────────────────────────────────────────────────────────────────
   describe("create", () => {
     it("should create a club whose id matches its owning user (CLUB role)", async () => {
-      const input = { userId: "user-1", name: "HC Madrid", city: "Madrid", country: "Spain" };
+      const input = {
+        userId: "user-1",
+        name: "HC Madrid",
+        city: "Madrid",
+        country: "Spain",
+        managedByFirstName: "Juan",
+        managedByLastName: "Perez",
+      };
       const mockUser = { id: "user-1", name: "HC Madrid User", role: "CLUB" };
       const mockClub = { id: "user-1", name: "HC Madrid", city: "Madrid", country: "Spain" };
 
@@ -87,6 +94,8 @@ describe("ClubsService", () => {
           name: input.name,
           city: input.city,
           country: input.country,
+          managedByFirstName: input.managedByFirstName,
+          managedByLastName: input.managedByLastName,
           benefits: [],
           instagram: undefined,
           twitter: undefined,
@@ -99,7 +108,14 @@ describe("ClubsService", () => {
     });
 
     it("should throw if the user does not have the CLUB role", async () => {
-      const input = { userId: "user-2", name: "HC Valencia", city: "Valencia", country: "Spain" };
+      const input = {
+        userId: "user-2",
+        name: "HC Valencia",
+        city: "Valencia",
+        country: "Spain",
+        managedByFirstName: "Juan",
+        managedByLastName: "Perez",
+      };
       const mockUser = { id: "user-2", name: "HC Valencia User", role: "PLAYER" };
 
       prisma.user.findUnique.mockResolvedValue(mockUser);
@@ -108,7 +124,14 @@ describe("ClubsService", () => {
     });
 
     it("should throw if the user already has a club profile", async () => {
-      const input = { userId: "user-3", name: "HC Sevilla", city: "Sevilla", country: "Spain" };
+      const input = {
+        userId: "user-3",
+        name: "HC Sevilla",
+        city: "Sevilla",
+        country: "Spain",
+        managedByFirstName: "Juan",
+        managedByLastName: "Perez",
+      };
       const mockUser = { id: "user-3", name: "HC Sevilla User", role: "CLUB" };
 
       prisma.user.findUnique.mockResolvedValue(mockUser);
@@ -118,7 +141,14 @@ describe("ClubsService", () => {
     });
 
     it("should notify all superadmins that the new club is pending verification", async () => {
-      const input = { userId: "user-4", name: "HC Bilbao", city: "Bilbao", country: "Spain" };
+      const input = {
+        userId: "user-4",
+        name: "HC Bilbao",
+        city: "Bilbao",
+        country: "Spain",
+        managedByFirstName: "Juan",
+        managedByLastName: "Perez",
+      };
       const mockUser = { id: "user-4", name: "HC Bilbao User", role: "CLUB" };
       const mockClub = { id: "user-4", name: "HC Bilbao" };
 

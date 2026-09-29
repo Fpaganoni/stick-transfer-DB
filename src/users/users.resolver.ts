@@ -45,6 +45,8 @@ export class UsersResolver {
     @Args("position", { nullable: true }) position?: string,
     @Args("dateOfBirth", { nullable: true }) dateOfBirth?: string,
     @Args("clubName", { nullable: true }) clubName?: string,
+    @Args("managedByFirstName", { nullable: true }) managedByFirstName?: string,
+    @Args("managedByLastName", { nullable: true }) managedByLastName?: string,
   ) {
     try {
       // Normalize role to uppercase for case-insensitive validation
@@ -67,6 +69,11 @@ export class UsersResolver {
         if (!country || !city) {
           throw new BadRequestException("country and city are required when registering as a CLUB");
         }
+        if (!managedByFirstName || !managedByLastName) {
+          throw new BadRequestException(
+            "managedByFirstName and managedByLastName are required when registering as a CLUB",
+          );
+        }
       }
 
       const user = await this.usersService.createUser({
@@ -87,6 +94,8 @@ export class UsersResolver {
           name: clubName,
           city: city!,
           country: country!,
+          managedByFirstName: managedByFirstName!,
+          managedByLastName: managedByLastName!,
         });
       }
 

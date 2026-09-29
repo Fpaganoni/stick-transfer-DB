@@ -8,7 +8,7 @@ import {
   Parent,
   ID,
 } from "@nestjs/graphql";
-import { UnauthorizedException } from "@nestjs/common";
+import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { JobsService } from "./jobs.service";
 import { AuthService } from "../auth/auth.service";
 
@@ -77,11 +77,11 @@ export class JobsResolver {
 
   @Mutation(() => Object)
   async createJobOpportunity(
+    @Context() context: any,
     @Args("title") title: string,
     @Args("description") description: string,
     @Args("positionType") positionType: string,
     @Args("level") level: string,
-    @Args("clubId") clubId: string,
     @Args("country") country: string,
     @Args("city") city: string,
     @Args("salary", { nullable: true }) salary?: number,
@@ -91,12 +91,17 @@ export class JobsResolver {
     @Args("expiresAt", { nullable: true }) expiresAt?: string,
     @Args("division", { nullable: true }) division?: string
   ) {
+    const currentUser = this.requireUser(context);
+    if (currentUser.role !== "CLUB") {
+      throw new ForbiddenException("Only clubs can post job opportunities");
+    }
+
     return this.jobsService.create({
       title,
       description,
       positionType,
       level,
-      clubId,
+      clubId: currentUser.userId,
       country,
       city,
       salary,

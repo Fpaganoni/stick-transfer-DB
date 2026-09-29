@@ -87,6 +87,8 @@ export class ClubsService {
     name: string;
     city: string;
     country: string;
+    managedByFirstName: string;
+    managedByLastName: string;
     benefits?: string[];
     instagram?: string;
     twitter?: string;
@@ -119,6 +121,8 @@ export class ClubsService {
         name: data.name,
         city: data.city,
         country: data.country,
+        managedByFirstName: data.managedByFirstName,
+        managedByLastName: data.managedByLastName,
         benefits: data.benefits || [],
         instagram: data.instagram,
         twitter: data.twitter,
@@ -234,6 +238,8 @@ export class ClubsService {
     id: string,
     data: {
       name?: string;
+      managedByFirstName?: string;
+      managedByLastName?: string;
       description?: string;
       bio?: string;
       coverImagePosition?: string;

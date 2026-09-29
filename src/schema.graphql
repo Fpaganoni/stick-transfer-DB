@@ -58,6 +58,7 @@ type Club {
   bio: String
   city: String!
   country: String!
+  managedBy: ClubManager!
   league: String
   foundedYear: Int
   email: String
@@ -80,6 +81,11 @@ type Club {
   likesReceivedCount: Int!
   isFollowedByCurrentUser: Boolean!
   isLikedByCurrentUser: Boolean!
+}
+
+type ClubManager {
+  firstName: String!
+  lastName: String!
 }
 
 type Team {
@@ -466,6 +472,8 @@ type Mutation {
     position: String
     dateOfBirth: String
     clubName: String
+    managedByFirstName: String
+    managedByLastName: String
   ): User!
   login(email: String!, password: String!): User!
   logout: Boolean!
@@ -502,6 +510,8 @@ type Mutation {
     name: String!
     city: String!
     country: String!
+    managedByFirstName: String!
+    managedByLastName: String!
     location: String
     benefits: [String!]
     instagram: String
@@ -523,6 +533,8 @@ type Mutation {
   updateClub(
     id: ID!
     name: String
+    managedByFirstName: String
+    managedByLastName: String
     description: String
     bio: String
     coverImagePosition: String
@@ -548,7 +560,6 @@ type Mutation {
     description: String!
     positionType: String!
     level: String!
-    clubId: String!
     country: String!
     city: String!
     salary: Float

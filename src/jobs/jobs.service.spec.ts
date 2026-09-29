@@ -14,6 +14,7 @@ const mockPrismaService = {
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+    count: jest.fn(),
   },
   jobApplication: {
     create: jest.fn(),
@@ -104,6 +105,7 @@ describe("JobsService", () => {
         currency: "EUR",
       };
       const mockJob = { id: "job-new", ...input };
+      prisma.jobOpportunity.count.mockResolvedValue(0);
       prisma.jobOpportunity.create.mockResolvedValue(mockJob);
 
       const result = await service.create(input);
@@ -115,6 +117,24 @@ describe("JobsService", () => {
         })
       );
       expect(result).toEqual(mockJob);
+    });
+
+    it("should reject when club already has 5 active job opportunities", async () => {
+      const input = {
+        title: "Forward Player",
+        description: "We need a forward",
+        positionType: "PLAYER",
+        level: "PROFESSIONAL",
+        clubId: "club-1",
+        country: "Spain",
+        city: "Barcelona",
+      };
+      prisma.jobOpportunity.count.mockResolvedValue(5);
+
+      await expect(service.create(input)).rejects.toThrow(
+        "Your club has reached the limit of 5 active job opportunities"
+      );
+      expect(prisma.jobOpportunity.create).not.toHaveBeenCalled();
     });
   });
 

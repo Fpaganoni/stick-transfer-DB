@@ -51,6 +51,8 @@ export class ClubsResolver {
     @Args("name") name: string,
     @Args("city") city: string,
     @Args("country") country: string,
+    @Args("managedByFirstName") managedByFirstName: string,
+    @Args("managedByLastName") managedByLastName: string,
     @Args("location", { nullable: true }) location?: string,
     @Args("benefits", { type: () => [String], nullable: true }) benefits?: string[],
     @Args("instagram", { nullable: true }) instagram?: string,
@@ -63,7 +65,7 @@ export class ClubsResolver {
 
     return this.clubsService.create({
       userId: currentUser.userId,
-      name, city, country, benefits,
+      name, city, country, managedByFirstName, managedByLastName, benefits,
       instagram, twitter, facebook, tiktok
     });
   }
@@ -90,6 +92,8 @@ export class ClubsResolver {
   async updateClub(
     @Args("id") id: string,
     @Args("name", { nullable: true }) name?: string,
+    @Args("managedByFirstName", { nullable: true }) managedByFirstName?: string,
+    @Args("managedByLastName", { nullable: true }) managedByLastName?: string,
     @Args("description", { nullable: true }) description?: string,
     @Args("bio", { nullable: true }) bio?: string,
     @Args("coverImagePosition", { nullable: true }) coverImagePosition?: string,
@@ -105,9 +109,14 @@ export class ClubsResolver {
     @Args("benefits", { type: () => [String], nullable: true }) benefits?: string[],
   ) {
     return this.clubsService.updateClub(id, {
-      name, description, bio, coverImagePosition, league, foundedYear,
+      name, managedByFirstName, managedByLastName, description, bio, coverImagePosition, league, foundedYear,
       email, phone, website, instagram, twitter, facebook, tiktok, benefits,
     });
+  }
+
+  @ResolveField()
+  managedBy(@Parent() club: any) {
+    return { firstName: club.managedByFirstName, lastName: club.managedByLastName };
   }
 
   @Mutation()

@@ -81,6 +81,15 @@ export class JobsService {
     expiresAt?: string;
     division?: string;
   }) {
+    const activeJobsCount = await this.prisma.jobOpportunity.count({
+      where: { clubId: data.clubId, status: "OPEN" },
+    });
+    if (activeJobsCount >= 5) {
+      throw new ForbiddenException(
+        "Your club has reached the limit of 5 active job opportunities",
+      );
+    }
+
     return this.prisma.jobOpportunity.create({
       data: {
         ...data,
