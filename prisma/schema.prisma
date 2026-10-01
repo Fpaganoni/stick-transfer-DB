@@ -9,39 +9,50 @@ datasource db {
 }
 
 model User {
-  id                    String       @id @default(uuid())
-  email                 String       @unique
+  id                 String              @id @default(uuid())
+  email              String              @unique
   /// Nullable: OAuth users (Google, Apple) do not have a password.
   /// SECURITY: Always check authProvider before assuming a password exists.
-  password              String?
-  name                  String
-  username              String?      @unique
-  avatar                String?
-  coverImage            String?
-  coverImagePosition    String?      @default("50%")
-  bio                   String?
-  position              String?
-  role                  Role         @default(PLAYER)
-  country               String?
-  city                  String?
-  clubId                String?
-  yearsOfExperience     Int?
-  cvUrl                 String?
-  multimedia            String[]
-  dateOfBirth           DateTime?
-  level                 UserLevel?
-  isVerified            Boolean      @default(false)
-  isEmailVerified       Boolean      @default(false)
-  isActive              Boolean      @default(true)
+  password           String?
+  name               String
+  username           String?             @unique
+  avatar             String?
+  coverImage         String?
+  coverImagePosition String?             @default("50%")
+  bio                String?
+  position           String?
+  role               Role                @default(PLAYER)
+  country            String?
+  city               String?
+  clubId             String?
+  yearsOfExperience  Int?
+  cvUrl              String?
+  multimedia         String[]
+  dateOfBirth        DateTime?
+  level              UserLevel?
+  // Umpire-only profile fields (null/empty for other roles)
+  licenseLevel       UmpireLicenseLevel?
+  certifyingBody     String?
+  /// PRIVACY: only exposed to the owner and SUPERADMIN (see users.resolver).
+  licenseNumber      String?
+  certificationYear  Int?
+  matchesOfficiated  Int?
+  travelAvailability TravelAvailability?
+  languages          String[]
+  modalities         UmpireModality[]
+  umpireCategories   UmpireCategory[]
+  isVerified         Boolean             @default(false)
+  isEmailVerified    Boolean             @default(false)
+  isActive           Boolean             @default(true)
   /// The OAuth provider used to authenticate this user.
   /// SECURITY: Used to prevent cross-provider account collisions.
-  authProvider          AuthProvider @default(EMAIL)
+  authProvider       AuthProvider        @default(EMAIL)
   /// The unique user ID from the OAuth provider (Google sub, Apple sub).
   /// SECURITY: Apple only sends email on the FIRST login; socialId is the
   /// only reliable identifier for subsequent Apple logins.
-  socialId              String?
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @updatedAt
+  socialId           String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
   // Relations
   club            Club?        @relation("ClubMembers", fields: [clubId], references: [id])
@@ -58,6 +69,9 @@ model User {
 
   // Career & Stats
   trajectories Trajectory[] @relation("UserTrajectories")
+
+  // Umpire certifications
+  umpireCertifications UmpireCertification[] @relation("UserUmpireCertifications")
 
   // Email verification
   emailVerificationTokens EmailVerificationToken[] @relation("UserVerificationTokens")
@@ -89,6 +103,7 @@ model User {
   @@index([role, position])
   @@index([country, city])
   @@index([role, country, city, position])
+  @@index([role, licenseLevel])
 }
 
 /// A Club is the club profile of a single User with role CLUB.
@@ -121,7 +136,7 @@ model Club {
   videos             String[]           @default([])
 
   /// The User (role CLUB) this club profile belongs to. Same id as the user.
-  user      User     @relation("ClubProfile", fields: [id], references: [id], onDelete: Cascade)
+  user User @relation("ClubProfile", fields: [id], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -242,6 +257,21 @@ model Trajectory {
   @@index([userId])
   @@index([clubId])
   @@index([isCurrent])
+}
+
+model UmpireCertification {
+  id        String    @id @default(uuid())
+  userId    String
+  name      String
+  issuer    String
+  issuedAt  DateTime?
+  fileUrl   String?
+  order     Int       @default(0)
+  createdAt DateTime  @default(now())
+
+  user User @relation("UserUmpireCertifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Conversation {
@@ -366,17 +396,17 @@ enum ReportStatus {
 
 /// User-submitted reports against any reportable entity (user, club, post, etc).
 model Report {
-  id          String           @id @default(uuid())
-  reporterId  String
-  targetType  ReportTargetType
-  targetId    String
-  reason      ReportReason
-  description String?          @db.Text
-  status      ReportStatus     @default(PENDING)
+  id           String           @id @default(uuid())
+  reporterId   String
+  targetType   ReportTargetType
+  targetId     String
+  reason       ReportReason
+  description  String?          @db.Text
+  status       ReportStatus     @default(PENDING)
   reviewedById String?
-  reviewedAt  DateTime?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  reviewedAt   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 
   reporter   User  @relation("ReportsFiled", fields: [reporterId], references: [id], onDelete: Cascade)
   reviewedBy User? @relation("ReportsReviewed", fields: [reviewedById], references: [id], onDelete: SetNull)
@@ -410,7 +440,7 @@ model Follow {
   followingClubId String?
   createdAt       DateTime         @default(now())
 
-  followerUser User? @relation("FollowerUser", fields: [followerId],      references: [id], onDelete: Cascade, map: "Follow_followerUser_fkey")
+  followerUser User? @relation("FollowerUser", fields: [followerId], references: [id], onDelete: Cascade, map: "Follow_followerUser_fkey")
   followedUser User? @relation("FollowedUser", fields: [followingUserId], references: [id], onDelete: Cascade, map: "Follow_followedUser_fkey")
   followedClub Club? @relation("FollowedClub", fields: [followingClubId], references: [id], onDelete: Cascade, map: "Follow_followedClub_fkey")
 
@@ -430,7 +460,7 @@ model Like {
   likedClubId String?
   createdAt   DateTime       @default(now())
 
-  likerUser User? @relation("LikerUser", fields: [likerId],     references: [id], onDelete: Cascade, map: "Like_likerUser_fkey")
+  likerUser User? @relation("LikerUser", fields: [likerId], references: [id], onDelete: Cascade, map: "Like_likerUser_fkey")
   likedUser User? @relation("LikedUser", fields: [likedUserId], references: [id], onDelete: Cascade, map: "Like_likedUser_fkey")
   likedClub Club? @relation("LikedClub", fields: [likedClubId], references: [id], onDelete: Cascade, map: "Like_likedClub_fkey")
 
@@ -466,7 +496,35 @@ enum Role {
   PLAYER
   COACH
   CLUB
+  UMPIRE
   SUPERADMIN
+}
+
+enum UmpireLicenseLevel {
+  REGIONAL
+  NACIONAL
+  INTERNACIONAL
+}
+
+enum TravelAvailability {
+  LOCAL
+  REGIONAL
+  NACIONAL
+  INTERNACIONAL
+}
+
+enum UmpireModality {
+  CESPED
+  SALA
+  INDOOR
+}
+
+enum UmpireCategory {
+  JUVENIL
+  MAYORES
+  MASCULINO
+  FEMENINO
+  VETERANOS
 }
 
 enum AuthProvider {

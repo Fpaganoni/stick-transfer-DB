@@ -55,10 +55,10 @@ export class UsersResolver {
       // Validate role if provided — SUPERADMIN cannot self-register
       if (
         normalizedRole &&
-        !["PLAYER", "COACH", "CLUB"].includes(normalizedRole)
+        !["PLAYER", "COACH", "CLUB", "UMPIRE"].includes(normalizedRole)
       ) {
         throw new BadRequestException(
-          "Invalid role. Allowed roles: PLAYER, COACH, CLUB",
+          "Invalid role. Allowed roles: PLAYER, COACH, CLUB, UMPIRE",
         );
       }
 
@@ -166,8 +166,14 @@ export class UsersResolver {
   ) {
     const user = await this.usersService.findById(userId);
     if (!user) throw new Error("User not found");
-    if (user.role !== "PLAYER" && user.role !== "COACH") {
-      throw new Error("CV upload is only available for PLAYER and COACH roles");
+    if (
+      user.role !== "PLAYER" &&
+      user.role !== "COACH" &&
+      user.role !== "UMPIRE"
+    ) {
+      throw new Error(
+        "CV upload is only available for PLAYER, COACH and UMPIRE roles",
+      );
     }
     if (!base64.startsWith("data:application/pdf;base64,")) {
       throw new Error("Invalid file format. Only PDF files are allowed.");
@@ -223,6 +229,11 @@ export class UsersResolver {
     return this.usersService.findByRole("COACH");
   }
 
+  @Query(() => [Object])
+  async umpires() {
+    return this.usersService.findByRole("UMPIRE");
+  }
+
   @Mutation(() => Object)
   async updateUser(
     @Args("id") id: string,
@@ -244,6 +255,20 @@ export class UsersResolver {
     @Args("level", { nullable: true }) level?: string,
     @Args("trajectories", { type: () => [Object], nullable: true })
     trajectories?: any[],
+    @Args("licenseLevel", { nullable: true }) licenseLevel?: string,
+    @Args("certifyingBody", { nullable: true }) certifyingBody?: string,
+    @Args("licenseNumber", { nullable: true }) licenseNumber?: string,
+    @Args("certificationYear", { nullable: true }) certificationYear?: number,
+    @Args("matchesOfficiated", { nullable: true }) matchesOfficiated?: number,
+    @Args("travelAvailability", { nullable: true }) travelAvailability?: string,
+    @Args("languages", { type: () => [String], nullable: true })
+    languages?: string[],
+    @Args("modalities", { type: () => [String], nullable: true })
+    modalities?: string[],
+    @Args("umpireCategories", { type: () => [String], nullable: true })
+    umpireCategories?: string[],
+    @Args("umpireCertifications", { type: () => [Object], nullable: true })
+    umpireCertifications?: any[],
   ) {
     try {
       return await this.usersService.updateUser(id, {
@@ -263,6 +288,16 @@ export class UsersResolver {
         dateOfBirth,
         level,
         trajectories,
+        licenseLevel,
+        certifyingBody,
+        licenseNumber,
+        certificationYear,
+        matchesOfficiated,
+        travelAvailability,
+        languages,
+        modalities,
+        umpireCategories,
+        umpireCertifications,
       });
     } catch (error) {
       if (error.code === "P2002") {
@@ -281,6 +316,25 @@ export class UsersResolver {
       include: { club: true },
       orderBy: { order: "asc" },
     });
+  }
+
+  @ResolveField()
+  async umpireCertifications(@Parent() user: any) {
+    return this.prisma.umpireCertification.findMany({
+      where: { userId: user.id },
+      orderBy: { order: "asc" },
+    });
+  }
+
+  /** PRIVACY: license number is visible only to the owner and super admins. */
+  @ResolveField()
+  async licenseNumber(@Parent() user: any, @Context() context: any) {
+    const currentUser = this.getCurrentUser(context);
+    if (!currentUser) return null;
+    if (currentUser.userId === user.id || currentUser.role === "SUPERADMIN") {
+      return user.licenseNumber ?? null;
+    }
+    return null;
   }
 
   @ResolveField()

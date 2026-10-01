@@ -14,6 +14,10 @@ const mockPrismaService = {
     deleteMany: jest.fn(),
     createMany: jest.fn(),
   },
+  umpireCertification: {
+    deleteMany: jest.fn(),
+    createMany: jest.fn(),
+  },
 };
 
 describe("UsersService", () => {
@@ -173,6 +177,66 @@ describe("UsersService", () => {
         orderBy: { createdAt: "desc" },
       });
       expect(result).toEqual(mockPlayers);
+    });
+  });
+
+  // ── updateUser (umpire) ────────────────────────────────────────────────────
+  describe("updateUser - umpire fields", () => {
+    it("rejects umpire fields for non-umpire roles", async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: "PLAYER" });
+
+      await expect(
+        service.updateUser("user-1", { licenseLevel: "NACIONAL" }),
+      ).rejects.toThrow("only available for the UMPIRE role");
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it("resets isVerified when license identity changes", async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        role: "UMPIRE",
+        isVerified: true,
+        licenseLevel: "NACIONAL",
+        certifyingBody: "CAH",
+        licenseNumber: "A-1",
+      });
+      prisma.user.update.mockResolvedValue({ id: "user-1" });
+
+      await service.updateUser("user-1", { licenseNumber: "A-2" });
+
+      expect(prisma.user.update.mock.calls[0][0].data.isVerified).toBe(false);
+    });
+
+    it("keeps isVerified when only non-identity umpire fields change", async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        role: "UMPIRE",
+        isVerified: true,
+        licenseLevel: "NACIONAL",
+        certifyingBody: "CAH",
+        licenseNumber: "A-1",
+      });
+      prisma.user.update.mockResolvedValue({ id: "user-1" });
+
+      await service.updateUser("user-1", { matchesOfficiated: 120 });
+
+      expect(prisma.user.update.mock.calls[0][0].data).not.toHaveProperty(
+        "isVerified",
+      );
+    });
+
+    it("replaces certifications", async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: "UMPIRE", isVerified: false });
+      prisma.user.update.mockResolvedValue({ id: "user-1" });
+
+      await service.updateUser("user-1", {
+        umpireCertifications: [
+          { name: "Nivel 2", issuer: "FIH", issuedAt: "2024-05-01" },
+        ],
+      });
+
+      expect(prisma.umpireCertification.deleteMany).toHaveBeenCalledWith({
+        where: { userId: "user-1" },
+      });
+      expect(prisma.umpireCertification.createMany).toHaveBeenCalledTimes(1);
     });
   });
 

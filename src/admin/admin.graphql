@@ -2,6 +2,7 @@ type AdminDashboardStats {
   totalUsersCount: Int!
   playersCount: Int!
   coachesCount: Int!
+  umpiresCount: Int!
   clubsCount: Int!
   superAdminsCount: Int!
   activeUsersCount: Int!

@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import * as bcrypt from "bcrypt";
 
@@ -112,9 +112,72 @@ export class UsersService {
       dateOfBirth?: string;
       level?: string;
       trajectories?: any[];
+      licenseLevel?: string;
+      certifyingBody?: string;
+      licenseNumber?: string;
+      certificationYear?: number;
+      matchesOfficiated?: number;
+      travelAvailability?: string;
+      languages?: string[];
+      modalities?: string[];
+      umpireCategories?: string[];
+      umpireCertifications?: any[];
     },
   ) {
-    const { trajectories, dateOfBirth, level, ...userUpdateData } = data;
+    const {
+      trajectories,
+      dateOfBirth,
+      level,
+      licenseLevel,
+      travelAvailability,
+      modalities,
+      umpireCategories,
+      umpireCertifications,
+      ...userUpdateData
+    } = data;
+
+    const { certifyingBody, licenseNumber } = userUpdateData;
+
+    const hasUmpireData = [
+      licenseLevel,
+      certifyingBody,
+      licenseNumber,
+      userUpdateData.certificationYear,
+      userUpdateData.matchesOfficiated,
+      travelAvailability,
+      userUpdateData.languages,
+      modalities,
+      umpireCategories,
+      umpireCertifications,
+    ].some((v) => v !== undefined);
+
+    // License identity changed -> verification must be redone by an admin
+    let resetVerification = false;
+    if (hasUmpireData) {
+      const existing = await this.prisma.user.findUnique({
+        where: { id },
+        select: {
+          role: true,
+          isVerified: true,
+          licenseLevel: true,
+          certifyingBody: true,
+          licenseNumber: true,
+        },
+      });
+      if (!existing) throw new BadRequestException("User not found");
+      if (existing.role !== "UMPIRE") {
+        throw new BadRequestException(
+          "Umpire fields are only available for the UMPIRE role",
+        );
+      }
+      resetVerification =
+        existing.isVerified &&
+        ((licenseLevel !== undefined && licenseLevel !== existing.licenseLevel) ||
+          (certifyingBody !== undefined &&
+            certifyingBody !== existing.certifyingBody) ||
+          (licenseNumber !== undefined &&
+            licenseNumber !== existing.licenseNumber));
+    }
 
     const updatedUser = await this.prisma.user.update({
       where: { id },
@@ -122,8 +185,30 @@ export class UsersService {
         ...userUpdateData,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
         level: level as any,
+        licenseLevel: licenseLevel as any,
+        travelAvailability: travelAvailability as any,
+        modalities: modalities as any,
+        umpireCategories: umpireCategories as any,
+        ...(resetVerification ? { isVerified: false } : {}),
       },
     });
+
+    if (umpireCertifications) {
+      // Full replacement, same strategy as trajectories
+      await this.prisma.umpireCertification.deleteMany({ where: { userId: id } });
+      if (umpireCertifications.length > 0) {
+        await this.prisma.umpireCertification.createMany({
+          data: umpireCertifications.map((c, i) => ({
+            userId: id,
+            name: c.name,
+            issuer: c.issuer,
+            issuedAt: c.issuedAt ? new Date(c.issuedAt) : null,
+            fileUrl: c.fileUrl || null,
+            order: c.order ?? i,
+          })),
+        });
+      }
+    }
 
     if (trajectories) {
       // Logic to sync trajectories: Full replacement for profile sync

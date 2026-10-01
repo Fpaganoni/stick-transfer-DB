@@ -6,6 +6,9 @@ export interface ExploreFilters {
   country?: string;
   position?: string;
   level?: string;
+  licenseLevel?: string;
+  modality?: string;
+  umpireCategory?: string;
   league?: string;
   /** Generic search across name, username, city, bio */
   search?: string;
@@ -19,6 +22,14 @@ export interface ExploreFilters {
 export class ExploreService {
   constructor(private prisma: PrismaService) {}
 
+  private parseEnum(raw: string, label: string, allowed: string[]): string {
+    const value = raw.toUpperCase();
+    if (!allowed.includes(value)) {
+      throw new Error(`Invalid ${label}. Allowed: ${allowed.join(", ")}`);
+    }
+    return value;
+  }
+
   /**
    * Get filtered users for explore page
    * Returns active users with role filtering, search, and pagination
@@ -29,6 +40,9 @@ export class ExploreService {
       country,
       position,
       level,
+      licenseLevel,
+      modality,
+      umpireCategory,
       search,
       searchQuery,
       limit = 50,
@@ -42,8 +56,8 @@ export class ExploreService {
     // Role filter — normalize to uppercase, validate against allowed enum values
     if (role) {
       const normalizedRole = role.toUpperCase();
-      if (!["PLAYER", "COACH", "CLUB"].includes(normalizedRole)) {
-        throw new Error("Invalid role. Allowed: PLAYER, COACH, CLUB");
+      if (!["PLAYER", "COACH", "CLUB", "UMPIRE"].includes(normalizedRole)) {
+        throw new Error("Invalid role. Allowed: PLAYER, COACH, CLUB, UMPIRE");
       }
       where.role = normalizedRole;
     } else {
@@ -83,6 +97,34 @@ export class ExploreService {
           },
         ];
       }
+    }
+
+    // Umpire filters — each one implies role UMPIRE
+    if (licenseLevel) {
+      where.role = "UMPIRE";
+      where.licenseLevel = this.parseEnum(licenseLevel, "licenseLevel", [
+        "REGIONAL",
+        "NACIONAL",
+        "INTERNACIONAL",
+      ]);
+    }
+    if (modality) {
+      where.role = "UMPIRE";
+      where.modalities = {
+        has: this.parseEnum(modality, "modality", ["CESPED", "SALA", "INDOOR"]),
+      };
+    }
+    if (umpireCategory) {
+      where.role = "UMPIRE";
+      where.umpireCategories = {
+        has: this.parseEnum(umpireCategory, "umpireCategory", [
+          "JUVENIL",
+          "MAYORES",
+          "MASCULINO",
+          "FEMENINO",
+          "VETERANOS",
+        ]),
+      };
     }
 
     // searchQuery: targeted search on name and username only (from Explore search bar)

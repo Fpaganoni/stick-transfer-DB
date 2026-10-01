@@ -151,6 +151,7 @@ describe("AdminService", () => {
         .mockResolvedValueOnce(100) // total
         .mockResolvedValueOnce(60) // players
         .mockResolvedValueOnce(20) // coaches
+        .mockResolvedValueOnce(7) // umpires
         .mockResolvedValueOnce(15) // clubs
         .mockResolvedValueOnce(5) // superadmins
         .mockResolvedValueOnce(90) // active
@@ -164,6 +165,7 @@ describe("AdminService", () => {
           totalUsersCount: 100,
           playersCount: 60,
           coachesCount: 20,
+          umpiresCount: 7,
           clubsCount: 15,
           superAdminsCount: 5,
           activeUsersCount: 90,

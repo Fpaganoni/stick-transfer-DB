@@ -2,7 +2,52 @@ enum Role {
   PLAYER
   COACH
   CLUB
+  UMPIRE
   SUPERADMIN
+}
+
+enum UmpireLicenseLevel {
+  REGIONAL
+  NACIONAL
+  INTERNACIONAL
+}
+
+enum TravelAvailability {
+  LOCAL
+  REGIONAL
+  NACIONAL
+  INTERNACIONAL
+}
+
+enum UmpireModality {
+  CESPED
+  SALA
+  INDOOR
+}
+
+enum UmpireCategory {
+  JUVENIL
+  MAYORES
+  MASCULINO
+  FEMENINO
+  VETERANOS
+}
+
+type UmpireCertification {
+  id: ID!
+  name: String!
+  issuer: String!
+  issuedAt: String
+  fileUrl: String
+  order: Int!
+}
+
+input UmpireCertificationInput {
+  name: String!
+  issuer: String!
+  issuedAt: String
+  fileUrl: String
+  order: Int
 }
 
 type User {
@@ -25,6 +70,18 @@ type User {
   multimedia: [String!]!
   dateOfBirth: String
   level: UserLevel
+  # Umpire-only fields
+  licenseLevel: UmpireLicenseLevel
+  certifyingBody: String
+  """Only visible to the umpire themself and super admins; null for everyone else."""
+  licenseNumber: String
+  certificationYear: Int
+  matchesOfficiated: Int
+  travelAvailability: TravelAvailability
+  languages: [String!]!
+  modalities: [UmpireModality!]!
+  umpireCategories: [UmpireCategory!]!
+  umpireCertifications: [UmpireCertification!]!
   isVerified: Boolean!
   isEmailVerified: Boolean!
   isActive: Boolean!
@@ -393,6 +450,7 @@ type Query {
   me: User
   players: [User!]!
   coaches: [User!]!
+  umpires: [User!]!
 
   # Clubs & Teams
   clubs: [Club!]!
@@ -442,6 +500,9 @@ type Query {
     country: String
     position: String
     level: String
+    licenseLevel: UmpireLicenseLevel
+    modality: UmpireModality
+    umpireCategory: UmpireCategory
     searchQuery: String
     search: String
     limit: Int
@@ -499,6 +560,16 @@ type Mutation {
     dateOfBirth: String
     level: UserLevel
     trajectories: [TrajectoryInput!]
+    licenseLevel: UmpireLicenseLevel
+    certifyingBody: String
+    licenseNumber: String
+    certificationYear: Int
+    matchesOfficiated: Int
+    travelAvailability: TravelAvailability
+    languages: [String!]
+    modalities: [UmpireModality!]
+    umpireCategories: [UmpireCategory!]
+    umpireCertifications: [UmpireCertificationInput!]
   ): User!
 
   # Uploads
