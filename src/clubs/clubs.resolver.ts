@@ -29,6 +29,24 @@ export class ClubsResolver {
     return currentUser;
   }
 
+  private requireUser(context: any): { userId: string; role: string } {
+    const currentUser = this.getCurrentUser(context);
+    if (!currentUser) throw new UnauthorizedException("Authentication required");
+    return currentUser;
+  }
+
+  /** Club.id === owning User.id, so the club admin is the user with that id. */
+  private requireClubOwnerOrAdmin(
+    context: any,
+    clubId: string,
+  ): { userId: string; role: string } {
+    const currentUser = this.requireUser(context);
+    if (currentUser.userId !== clubId && currentUser.role !== "SUPERADMIN") {
+      throw new ForbiddenException("You are not the admin of this club");
+    }
+    return currentUser;
+  }
+
   @Query()
   clubs() {
     return this.clubsService.findAll();
@@ -41,7 +59,8 @@ export class ClubsResolver {
 
   /** Returns a flat view of every club paired with its CLUB user. */
   @Query()
-  clubAdmins() {
+  clubAdmins(@Context() context: any) {
+    this.requireSuperAdmin(context);
     return this.clubsService.getClubAdmins();
   }
 
@@ -90,6 +109,7 @@ export class ClubsResolver {
 
   @Mutation()
   async updateClub(
+    @Context() context: any,
     @Args("id") id: string,
     @Args("name", { nullable: true }) name?: string,
     @Args("managedByFirstName", { nullable: true }) managedByFirstName?: string,
@@ -108,6 +128,7 @@ export class ClubsResolver {
     @Args("tiktok", { nullable: true }) tiktok?: string,
     @Args("benefits", { type: () => [String], nullable: true }) benefits?: string[],
   ) {
+    this.requireClubOwnerOrAdmin(context, id);
     return this.clubsService.updateClub(id, {
       name, managedByFirstName, managedByLastName, description, bio, coverImagePosition, league, foundedYear,
       email, phone, website, instagram, twitter, facebook, tiktok, benefits,
@@ -121,14 +142,20 @@ export class ClubsResolver {
 
   @Mutation()
   async invitePlayerToClub(
+    @Context() context: any,
     @Args("clubId") clubId: string,
     @Args("userId") userId: string,
-    @Args("invitedBy") invitedBy: string
+    @Args("invitedBy", { nullable: true }) invitedBy?: string
   ) {
+    const currentUser = this.requireClubOwnerOrAdmin(context, clubId);
+    // Legacy clients still send invitedBy; the inviter is the session user.
+    if (invitedBy && invitedBy !== currentUser.userId) {
+      throw new ForbiddenException("You can only invite on behalf of yourself");
+    }
     const membership = await this.clubsService.inviteMember(
       clubId,
       userId,
-      invitedBy
+      currentUser.userId
     );
     this.notifications.sendNotification(userId, {
       type: "INVITE",
@@ -140,15 +167,21 @@ export class ClubsResolver {
   }
 
   @Mutation()
-  acceptMembership(@Args("membershipId") membershipId: string) {
-    return this.clubsService.acceptMembership(membershipId);
+  acceptMembership(
+    @Context() context: any,
+    @Args("membershipId") membershipId: string,
+  ) {
+    const currentUser = this.requireUser(context);
+    return this.clubsService.acceptMembership(membershipId, currentUser.userId);
   }
 
   @Mutation(() => Boolean)
   async uploadClubLogo(
+    @Context() context: any,
     @Args("clubId", { type: () => ID }) clubId: string,
     @Args("base64") base64: string,
   ) {
+    this.requireClubOwnerOrAdmin(context, clubId);
     try {
       const res = await this.cloudinary.uploadBase64(base64, "club_logos");
       await this.clubsService.setLogo(clubId, res.secure_url || res.url);
@@ -160,9 +193,11 @@ export class ClubsResolver {
 
   @Mutation(() => Boolean)
   async uploadClubCoverImage(
+    @Context() context: any,
     @Args("clubId", { type: () => ID }) clubId: string,
     @Args("base64") base64: string,
   ) {
+    this.requireClubOwnerOrAdmin(context, clubId);
     try {
       const res = await this.cloudinary.uploadBase64(base64, "club_covers");
       await this.clubsService.setCoverImage(clubId, res.secure_url || res.url);
@@ -174,9 +209,11 @@ export class ClubsResolver {
 
   @Mutation()
   requestClubVerification(
+    @Context() context: any,
     @Args("clubId") clubId: string,
     @Args("documentUrl") documentUrl: string
   ) {
+    this.requireClubOwnerOrAdmin(context, clubId);
     return this.clubsService.requestVerification(clubId, documentUrl);
   }
 

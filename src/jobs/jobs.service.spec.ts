@@ -1,3 +1,8 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { JobsService } from "./jobs.service";
@@ -138,13 +143,69 @@ describe("JobsService", () => {
     });
   });
 
+  describe("create - validation", () => {
+    it("should reject a negative salary", async () => {
+      await expect(
+        service.create({
+          title: "t", description: "d", positionType: "PLAYER", level: "PROFESSIONAL",
+          clubId: "club-1", country: "AR", city: "BA", salary: -1,
+        }),
+      ).rejects.toThrow("salary cannot be negative");
+      expect(prisma.jobOpportunity.create).not.toHaveBeenCalled();
+    });
+  });
+
   // ── delete ────────────────────────────────────────────────────────────────
   describe("delete", () => {
-    it("should delete job and return true", async () => {
+    it("should delete job and return true when actor owns the club", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1" });
       prisma.jobOpportunity.delete.mockResolvedValue({});
-      const result = await service.delete("job-1");
+      const result = await service.delete("job-1", { userId: "club-1", role: "CLUB" });
       expect(prisma.jobOpportunity.delete).toHaveBeenCalledWith({ where: { id: "job-1" } });
       expect(result).toBe(true);
+    });
+
+    it("should reject when actor does not own the job", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1" });
+      await expect(
+        service.delete("job-1", { userId: "club-2", role: "CLUB" }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.jobOpportunity.delete).not.toHaveBeenCalled();
+    });
+
+    it("should allow a super admin", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1" });
+      prisma.jobOpportunity.delete.mockResolvedValue({});
+      await expect(
+        service.delete("job-1", { userId: "admin", role: "SUPERADMIN" }),
+      ).resolves.toBe(true);
+    });
+
+    it("should throw NotFound for a missing job", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue(null);
+      await expect(
+        service.delete("nope", { userId: "club-1", role: "CLUB" }),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ── update ────────────────────────────────────────────────────────────────
+  describe("update", () => {
+    it("should reject when actor does not own the job", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1" });
+      await expect(
+        service.update("job-1", { status: "CLOSED" }, { userId: "x", role: "PLAYER" }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.jobOpportunity.update).not.toHaveBeenCalled();
+    });
+
+    it("should update when actor owns the job", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1" });
+      prisma.jobOpportunity.update.mockResolvedValue({ id: "job-1", status: "CLOSED" });
+      await service.update("job-1", { status: "CLOSED" }, { userId: "club-1", role: "CLUB" });
+      expect(prisma.jobOpportunity.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: "job-1" }, data: { status: "CLOSED" } }),
+      );
     });
   });
 
@@ -153,8 +214,16 @@ describe("JobsService", () => {
     const applicationData = {
       jobOpportunityId: "job-1",
       userId: "user-1",
+      role: "PLAYER",
       coverLetter: "I want to join!",
     };
+
+    beforeEach(() => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue({
+        id: "job-1",
+        positionType: "PLAYER",
+      });
+    });
 
     it("should create an application with cover letter", async () => {
       const mockApplication = {
@@ -267,13 +336,56 @@ describe("JobsService", () => {
     it("should return applications for a job, optionally filtered by status", async () => {
       prisma.jobApplication.findMany.mockResolvedValue([{ id: "app-1" }]);
 
-      await service.getApplications("job-1", "PENDING");
+      prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1" });
+
+      await service.getApplications("job-1", "PENDING", { userId: "club-1", role: "CLUB" });
 
       expect(prisma.jobApplication.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { jobOpportunityId: "job-1", status: "PENDING" },
         })
       );
+    });
+  });
+
+  describe("getApplications - authorization", () => {
+    it("should reject a non-owner", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1" });
+      await expect(
+        service.getApplications("job-1", undefined, { userId: "x", role: "PLAYER" }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.jobApplication.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("getApplicationById", () => {
+    const app = {
+      id: "app-1",
+      userId: "player-1",
+      jobOpportunity: { clubId: "club-1" },
+    };
+
+    it.each([
+      ["the applicant", { userId: "player-1", role: "PLAYER" }],
+      ["the owning club", { userId: "club-1", role: "CLUB" }],
+      ["a super admin", { userId: "admin", role: "SUPERADMIN" }],
+    ])("should return the application to %s", async (_n, actor) => {
+      prisma.jobApplication.findUnique.mockResolvedValue(app);
+      await expect(service.getApplicationById("app-1", actor)).resolves.toBe(app);
+    });
+
+    it("should reject anyone else", async () => {
+      prisma.jobApplication.findUnique.mockResolvedValue(app);
+      await expect(
+        service.getApplicationById("app-1", { userId: "other", role: "PLAYER" }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it("should return null when the application does not exist", async () => {
+      prisma.jobApplication.findUnique.mockResolvedValue(null);
+      await expect(
+        service.getApplicationById("nope", { userId: "x", role: "PLAYER" }),
+      ).resolves.toBeNull();
     });
   });
 
@@ -288,6 +400,150 @@ describe("JobsService", () => {
           where: { userId: "user-1", status: undefined },
         })
       );
+    });
+  });
+
+  // ── UMPIRE opportunities ──────────────────────────────────────────────────
+  describe("UMPIRE opportunities", () => {
+    const umpireInput = {
+      title: "Umpire - Division de Honor",
+      description: "Need an umpire",
+      positionType: "umpire",
+      level: "PROFESSIONAL",
+      clubId: "club-1",
+      country: "Spain",
+      city: "Madrid",
+      licenseLevelRequired: "NACIONAL",
+      modality: "CESPED",
+      umpireCategory: "MASCULINO",
+      matchDate: "2026-11-15T10:00:00.000Z",
+    };
+
+    it("create accepts UMPIRE (case-insensitive) and stores umpire fields", async () => {
+      prisma.jobOpportunity.count.mockResolvedValue(0);
+      prisma.jobOpportunity.create.mockResolvedValue({ id: "job-u" });
+
+      await service.create(umpireInput);
+
+      const data = prisma.jobOpportunity.create.mock.calls[0][0].data;
+      expect(data.positionType).toBe("UMPIRE");
+      expect(data.licenseLevelRequired).toBe("NACIONAL");
+      expect(data.modality).toBe("CESPED");
+      expect(data.umpireCategory).toBe("MASCULINO");
+      expect(data.matchDate).toEqual(new Date("2026-11-15T10:00:00.000Z"));
+    });
+
+    it("create rejects an invalid positionType with a clear 400", async () => {
+      await expect(
+        service.create({ ...umpireInput, positionType: "Referee" }),
+      ).rejects.toThrow(
+        new BadRequestException(
+          "Invalid positionType. Allowed: PLAYER, COACH, STAFF, UMPIRE, OTHER",
+        ),
+      );
+      expect(prisma.jobOpportunity.create).not.toHaveBeenCalled();
+    });
+
+    it("create rejects umpire-only fields on a non-UMPIRE job", async () => {
+      await expect(
+        service.create({ ...umpireInput, positionType: "PLAYER" }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it("create rejects an invalid matchDate", async () => {
+      await expect(
+        service.create({ ...umpireInput, matchDate: "not-a-date" }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it("findAll filters by positionType case-insensitively", async () => {
+      prisma.jobOpportunity.findMany.mockResolvedValue([]);
+
+      await service.findAll({ positionType: "umpire" });
+
+      expect(prisma.jobOpportunity.findMany.mock.calls[0][0].where.positionType).toBe(
+        "UMPIRE",
+      );
+    });
+
+    it("findAll rejects an invalid positionType filter with a 400", async () => {
+      await expect(service.findAll({ positionType: "Umpires" })).rejects.toThrow(
+        "Invalid positionType. Allowed: PLAYER, COACH, STAFF, UMPIRE, OTHER",
+      );
+    });
+
+    it("findAll applies umpire filters and matchDate range", async () => {
+      prisma.jobOpportunity.findMany.mockResolvedValue([]);
+
+      await service.findAll({
+        positionType: "UMPIRE",
+        licenseLevelRequired: "REGIONAL",
+        modality: "SALA",
+        umpireCategory: "JUVENIL",
+        matchDateFrom: "2026-11-01",
+        matchDateTo: "2026-12-01",
+      });
+
+      const where = prisma.jobOpportunity.findMany.mock.calls[0][0].where;
+      expect(where.licenseLevelRequired).toBe("REGIONAL");
+      expect(where.modality).toBe("SALA");
+      expect(where.umpireCategory).toBe("JUVENIL");
+      expect(where.matchDate).toEqual({
+        gte: new Date("2026-11-01"),
+        lte: new Date("2026-12-01"),
+      });
+    });
+
+    describe("applyForJob", () => {
+      const base = { jobOpportunityId: "job-u", userId: "user-1" };
+
+      beforeEach(() => {
+        prisma.jobOpportunity.findUnique.mockResolvedValue({
+          id: "job-u",
+          positionType: "UMPIRE",
+        });
+        prisma.jobApplication.create.mockResolvedValue({
+          id: "app-u",
+          user: { id: "user-1", role: "UMPIRE" },
+          jobOpportunity: { club: { id: "club-1" } },
+        });
+      });
+
+      it("allows an UMPIRE and emits APPLICATION_RECEIVED", async () => {
+        await service.applyForJob({ ...base, role: "UMPIRE" });
+
+        expect(prisma.jobApplication.create).toHaveBeenCalled();
+        expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+          "job.application_received",
+          expect.objectContaining({
+            actorId: "user-1",
+            recipientId: "club-1",
+            type: "APPLICATION_RECEIVED",
+          }),
+        );
+      });
+
+      it("allows a SUPERADMIN", async () => {
+        await service.applyForJob({ ...base, role: "SUPERADMIN" });
+        expect(prisma.jobApplication.create).toHaveBeenCalled();
+      });
+
+      it("rejects a PLAYER with 403", async () => {
+        await expect(
+          service.applyForJob({ ...base, role: "PLAYER" }),
+        ).rejects.toThrow(
+          new ForbiddenException("Only umpires can apply to UMPIRE job opportunities"),
+        );
+        expect(prisma.jobApplication.create).not.toHaveBeenCalled();
+        expect(mockEventEmitter.emit).not.toHaveBeenCalled();
+      });
+
+      it("throws NotFound for a missing job", async () => {
+        prisma.jobOpportunity.findUnique.mockResolvedValue(null);
+        await expect(
+          service.applyForJob({ ...base, role: "UMPIRE" }),
+        ).rejects.toThrow(NotFoundException);
+      });
     });
   });
 });

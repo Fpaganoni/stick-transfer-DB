@@ -1,4 +1,8 @@
-import { Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import * as bcrypt from "bcrypt";
 
@@ -33,6 +37,19 @@ export class UsersService {
         dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
       },
     });
+  }
+
+  /** Throws unless the user has an ACTIVE membership in the given club. */
+  async assertActiveClubMember(userId: string, clubId: string) {
+    const membership = await this.prisma.clubMember.findFirst({
+      where: { userId, clubId, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!membership) {
+      throw new ForbiddenException(
+        "You can only set a club you are an active member of",
+      );
+    }
   }
 
   async findByEmail(email: string) {
@@ -112,9 +129,89 @@ export class UsersService {
       dateOfBirth?: string;
       level?: string;
       trajectories?: any[];
+      licenseLevel?: string;
+      certifyingBody?: string;
+      licenseNumber?: string;
+      certificationYear?: number;
+      matchesOfficiated?: number;
+      travelAvailability?: string;
+      languages?: string[];
+      modalities?: string[];
+      umpireCategories?: string[];
+      umpireCertifications?: any[];
     },
   ) {
-    const { trajectories, dateOfBirth, level, ...userUpdateData } = data;
+    const {
+      trajectories,
+      dateOfBirth,
+      level,
+      licenseLevel,
+      travelAvailability,
+      modalities,
+      umpireCategories,
+      umpireCertifications,
+      ...userUpdateData
+    } = data;
+
+    const { certifyingBody, licenseNumber } = userUpdateData;
+
+    // Mirror the DB CHECK constraints so clients get a clear 400, not a masked 500
+    if (userUpdateData.yearsOfExperience != null && userUpdateData.yearsOfExperience < 0) {
+      throw new BadRequestException("yearsOfExperience cannot be negative");
+    }
+    if (userUpdateData.matchesOfficiated != null && userUpdateData.matchesOfficiated < 0) {
+      throw new BadRequestException("matchesOfficiated cannot be negative");
+    }
+    const certYear = userUpdateData.certificationYear;
+    if (certYear != null && (certYear < 1950 || certYear > 2100)) {
+      throw new BadRequestException("certificationYear must be between 1950 and 2100");
+    }
+    for (const t of trajectories ?? []) {
+      if (t.startDate && t.endDate && new Date(t.endDate) < new Date(t.startDate)) {
+        throw new BadRequestException("A trajectory cannot end before it starts");
+      }
+    }
+
+    const hasUmpireData = [
+      licenseLevel,
+      certifyingBody,
+      licenseNumber,
+      userUpdateData.certificationYear,
+      userUpdateData.matchesOfficiated,
+      travelAvailability,
+      userUpdateData.languages,
+      modalities,
+      umpireCategories,
+      umpireCertifications,
+    ].some((v) => v !== undefined);
+
+    // License identity changed -> verification must be redone by an admin
+    let resetVerification = false;
+    if (hasUmpireData) {
+      const existing = await this.prisma.user.findUnique({
+        where: { id },
+        select: {
+          role: true,
+          isVerified: true,
+          licenseLevel: true,
+          certifyingBody: true,
+          licenseNumber: true,
+        },
+      });
+      if (!existing) throw new BadRequestException("User not found");
+      if (existing.role !== "UMPIRE") {
+        throw new BadRequestException(
+          "Umpire fields are only available for the UMPIRE role",
+        );
+      }
+      resetVerification =
+        existing.isVerified &&
+        ((licenseLevel !== undefined && licenseLevel !== existing.licenseLevel) ||
+          (certifyingBody !== undefined &&
+            certifyingBody !== existing.certifyingBody) ||
+          (licenseNumber !== undefined &&
+            licenseNumber !== existing.licenseNumber));
+    }
 
     const updatedUser = await this.prisma.user.update({
       where: { id },
@@ -122,8 +219,30 @@ export class UsersService {
         ...userUpdateData,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
         level: level as any,
+        licenseLevel: licenseLevel as any,
+        travelAvailability: travelAvailability as any,
+        modalities: modalities as any,
+        umpireCategories: umpireCategories as any,
+        ...(resetVerification ? { isVerified: false } : {}),
       },
     });
+
+    if (umpireCertifications) {
+      // Full replacement, same strategy as trajectories
+      await this.prisma.umpireCertification.deleteMany({ where: { userId: id } });
+      if (umpireCertifications.length > 0) {
+        await this.prisma.umpireCertification.createMany({
+          data: umpireCertifications.map((c, i) => ({
+            userId: id,
+            name: c.name,
+            issuer: c.issuer,
+            issuedAt: c.issuedAt ? new Date(c.issuedAt) : null,
+            fileUrl: c.fileUrl || null,
+            order: c.order ?? i,
+          })),
+        });
+      }
+    }
 
     if (trajectories) {
       // Logic to sync trajectories: Full replacement for profile sync

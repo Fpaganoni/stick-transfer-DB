@@ -21,6 +21,7 @@ async function main() {
     prisma.like.deleteMany(),
     prisma.newsArticle.deleteMany(),
     prisma.trajectory.deleteMany(),
+    prisma.umpireCertification.deleteMany(),
     prisma.clubMember.deleteMany(),
     prisma.team.deleteMany(),
     prisma.club.deleteMany(),
@@ -190,6 +191,8 @@ async function main() {
     prisma.club.create({
       data: {
         id: clubUsers[0].id,
+        managedByFirstName: "Admin",
+        managedByLastName: "Club 0",
         name: "Club de Campo Villa de Madrid",
         city: "Madrid",
         country: "🇪🇸 España",
@@ -212,6 +215,8 @@ async function main() {
     prisma.club.create({
       data: {
         id: clubUsers[1].id,
+        managedByFirstName: "Admin",
+        managedByLastName: "Club 1",
         name: "RC Polo Barcelona",
         city: "Barcelona",
         country: "🇪🇸 España",
@@ -235,6 +240,8 @@ async function main() {
     prisma.club.create({
       data: {
         id: clubUsers[2].id,
+        managedByFirstName: "Admin",
+        managedByLastName: "Club 2",
         name: "Real Club de Polo",
         city: "Barcelona",
         country: "🇪🇸 España",
@@ -250,6 +257,8 @@ async function main() {
     prisma.club.create({
       data: {
         id: clubUsers[3].id,
+        managedByFirstName: "Admin",
+        managedByLastName: "Club 3",
         name: "CD Terrassa HC",
         city: "Terrassa",
         country: "🇪🇸 España",
@@ -266,6 +275,8 @@ async function main() {
     prisma.club.create({
       data: {
         id: clubUsers[4].id,
+        managedByFirstName: "Admin",
+        managedByLastName: "Club 4",
         name: "Atlètic Terrassa HC",
         city: "Terrassa",
         country: "🇪🇸 España",
@@ -286,6 +297,8 @@ async function main() {
     prisma.club.create({
       data: {
         id: clubUsers[5].id,
+        managedByFirstName: "Admin",
+        managedByLastName: "Club 5",
         name: "Club Atlético San Isidro",
         city: "Buenos Aires",
         country: "🇦🇷 Argentina",
@@ -306,6 +319,8 @@ async function main() {
     prisma.club.create({
       data: {
         id: clubUsers[6].id,
+        managedByFirstName: "Admin",
+        managedByLastName: "Club 6",
         name: "Club Atletico Belgrano",
         city: "Buenos Aires",
         country: "🇦🇷 Argentina",
@@ -325,6 +340,8 @@ async function main() {
     prisma.club.create({
       data: {
         id: clubUsers[7].id,
+        managedByFirstName: "Admin",
+        managedByLastName: "Club 7",
         name: "Gimnasia y Esgrima Buenos Aires",
         city: "Buenos Aires",
         country: "🇦🇷 Argentina",
@@ -345,6 +362,8 @@ async function main() {
     prisma.club.create({
       data: {
         id: clubUsers[8].id,
+        managedByFirstName: "Admin",
+        managedByLastName: "Club 8",
         name: "Club Italiano",
         city: "Buenos Aires",
         country: "🇦🇷 Argentina",
@@ -364,6 +383,8 @@ async function main() {
     prisma.club.create({
       data: {
         id: clubUsers[9].id,
+        managedByFirstName: "Admin",
+        managedByLastName: "Club 9",
         name: "Lomas Athletic Club",
         city: "Lomas de Zamora",
         country: "🇦🇷 Argentina",
@@ -380,6 +401,8 @@ async function main() {
     prisma.club.create({
       data: {
         id: clubUsers[10].id,
+        managedByFirstName: "Admin",
+        managedByLastName: "Club 10",
         name: "HC Rotterdam",
         city: "Rotterdam",
         country: "🇳🇱 Netherlands",
@@ -399,6 +422,8 @@ async function main() {
     prisma.club.create({
       data: {
         id: clubUsers[11].id,
+        managedByFirstName: "Admin",
+        managedByLastName: "Club 11",
         name: "Amsterdam HC",
         city: "Amsterdam",
         country: "🇳🇱 Netherlands",
@@ -756,6 +781,190 @@ async function main() {
 
   console.log(`✅ Created ${coaches.length} coaches\n`);
 
+  // ========== UMPIRES ==========
+  console.log("🟨 Creating umpires...");
+
+  const umpireData = [
+    {
+      username: "umpire_garcia",
+      email: "umpire.garcia@hockey-test.com",
+      name: "Javier García",
+      country: "🇪🇸",
+      city: "Madrid",
+      licenseLevel: "INTERNACIONAL",
+      certifyingBody: "Real Federación Española de Hockey",
+      licenseNumber: "RFEH-INT-0142",
+      certificationYear: 2012,
+      matchesOfficiated: 640,
+      travelAvailability: "INTERNACIONAL",
+      languages: ["Español", "English", "Français"],
+      modalities: ["CESPED", "SALA"],
+      umpireCategories: ["MAYORES", "MASCULINO", "FEMENINO"],
+    },
+    {
+      username: "umpire_vanderberg",
+      email: "umpire.vanderberg@hockey-test.com",
+      name: "Sofía Vanderberg",
+      country: "🇳🇱",
+      city: "Amsterdam",
+      licenseLevel: "INTERNACIONAL",
+      certifyingBody: "Koninklijke Nederlandse Hockey Bond",
+      licenseNumber: "KNHB-INT-0388",
+      certificationYear: 2015,
+      matchesOfficiated: 410,
+      travelAvailability: "INTERNACIONAL",
+      languages: ["Nederlands", "English", "Deutsch"],
+      modalities: ["CESPED", "INDOOR"],
+      umpireCategories: ["MAYORES", "FEMENINO", "JUVENIL"],
+    },
+    {
+      username: "umpire_rodriguez",
+      email: "umpire.rodriguez@hockey-test.com",
+      name: "Martín Rodríguez",
+      country: "🇦🇷",
+      city: "Buenos Aires",
+      licenseLevel: "NACIONAL",
+      certifyingBody: "Confederación Argentina de Hockey",
+      licenseNumber: "CAH-NAC-2210",
+      certificationYear: 2017,
+      matchesOfficiated: 280,
+      travelAvailability: "NACIONAL",
+      languages: ["Español", "English"],
+      modalities: ["CESPED"],
+      umpireCategories: ["MAYORES", "MASCULINO", "VETERANOS"],
+    },
+    {
+      username: "umpire_fernandez",
+      email: "umpire.fernandez@hockey-test.com",
+      name: "Lucía Fernández",
+      country: "🇦🇷",
+      city: "Lomas de Zamora",
+      licenseLevel: "NACIONAL",
+      certifyingBody: "Confederación Argentina de Hockey",
+      licenseNumber: "CAH-NAC-2467",
+      certificationYear: 2019,
+      matchesOfficiated: 195,
+      travelAvailability: "REGIONAL",
+      languages: ["Español"],
+      modalities: ["CESPED", "SALA"],
+      umpireCategories: ["FEMENINO", "JUVENIL"],
+    },
+    {
+      username: "umpire_soler",
+      email: "umpire.soler@hockey-test.com",
+      name: "Pau Soler",
+      country: "🇪🇸",
+      city: "Terrassa",
+      licenseLevel: "REGIONAL",
+      certifyingBody: "Federació Catalana d'Hoquei",
+      licenseNumber: "FCH-REG-0931",
+      certificationYear: 2021,
+      matchesOfficiated: 85,
+      travelAvailability: "LOCAL",
+      languages: ["Català", "Español"],
+      modalities: ["CESPED", "INDOOR"],
+      umpireCategories: ["JUVENIL", "MASCULINO"],
+    },
+    {
+      username: "umpire_alvarez",
+      email: "umpire.alvarez@hockey-test.com",
+      name: "Camila Álvarez",
+      country: "🇦🇷",
+      city: "Buenos Aires",
+      licenseLevel: "REGIONAL",
+      certifyingBody: "Asociación Metropolitana de Hockey",
+      licenseNumber: "AMH-REG-1578",
+      certificationYear: 2023,
+      matchesOfficiated: 32,
+      travelAvailability: "LOCAL",
+      languages: ["Español", "English"],
+      modalities: ["CESPED"],
+      umpireCategories: ["JUVENIL", "FEMENINO"],
+    },
+  ] as const;
+
+  const umpires = [];
+  for (let index = 0; index < umpireData.length; index++) {
+    const u = umpireData[index];
+    const gender = getGenderFromName(u.name);
+    const genderPath = gender === "female" ? "women" : "men";
+    const imageNumber = (index + 55) % 80;
+    const yearsOfExperience = new Date().getFullYear() - u.certificationYear;
+
+    const created = await prisma.user.create({
+      data: {
+        email: u.email,
+        username: u.username,
+        name: u.name,
+        password: hashedPassword,
+        role: "UMPIRE",
+        bio: `Field hockey umpire (${u.licenseLevel.toLowerCase()} license) with ${u.matchesOfficiated} matches officiated. Fair play first! 🏑`,
+        avatar: `https://randomuser.me/api/portraits/${genderPath}/${imageNumber}.jpg`,
+        country: u.country,
+        city: u.city,
+        dateOfBirth: randomDateOfBirth(26, 55),
+        yearsOfExperience,
+        licenseLevel: u.licenseLevel,
+        certifyingBody: u.certifyingBody,
+        licenseNumber: u.licenseNumber,
+        certificationYear: u.certificationYear,
+        matchesOfficiated: u.matchesOfficiated,
+        travelAvailability: u.travelAvailability,
+        languages: [...u.languages],
+        modalities: [...u.modalities],
+        umpireCategories: [...u.umpireCategories],
+        // First 4 verified by admin; the last 2 stay pending to exercise the flow
+        isVerified: index < 4,
+        isEmailVerified: true,
+      },
+    });
+    umpires.push(created);
+
+    await prisma.umpireCertification.createMany({
+      data: [
+        {
+          userId: created.id,
+          name: `Licencia de umpire ${u.licenseLevel.toLowerCase()}`,
+          issuer: u.certifyingBody,
+          issuedAt: new Date(u.certificationYear, 5, 1),
+          order: 0,
+        },
+        {
+          userId: created.id,
+          name: "Curso de actualizacion de reglas",
+          issuer: u.certifyingBody,
+          issuedAt: new Date(new Date().getFullYear() - 1, 8, 1),
+          order: 1,
+        },
+      ],
+    });
+
+    await prisma.trajectory.createMany({
+      data: [
+        {
+          userId: created.id,
+          title: "Umpire - Liga nacional",
+          organization: u.certifyingBody,
+          period: `${u.certificationYear + 1} - Present`,
+          startDate: new Date(u.certificationYear + 1, 0, 1),
+          isCurrent: true,
+          order: 0,
+        },
+        {
+          userId: created.id,
+          title: "Umpire - Torneo juvenil",
+          organization: u.certifyingBody,
+          period: `${u.certificationYear} - ${u.certificationYear + 1}`,
+          startDate: new Date(u.certificationYear, 0, 1),
+          endDate: new Date(u.certificationYear + 1, 0, 1),
+          order: 1,
+        },
+      ],
+    });
+  }
+
+  console.log(`✅ Created ${umpires.length} umpires\n`);
+
   // ========== SUPERADMIN ==========
   console.log("🛡️  Creating super admin...");
 
@@ -926,6 +1135,98 @@ async function main() {
   }
 
   console.log(`✅ Created ${jobData.length} job opportunities\n`);
+
+  // ========== UMPIRE JOB OPPORTUNITIES ==========
+  console.log("🟨 Creating umpire job opportunities...");
+
+  const daysFromNow = (days: number) =>
+    new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+
+  const umpireJobData = [
+    {
+      club: clubs[0], // Madrid
+      title: "Umpire - Division de Honor Masculina",
+      desc: "Looking for an experienced umpire for a top-flight men's match. Travel expenses covered.",
+      level: "PROFESSIONAL",
+      licenseLevelRequired: "NACIONAL",
+      modality: "CESPED",
+      umpireCategory: "MASCULINO",
+      matchDate: daysFromNow(21),
+      salary: 180,
+    },
+    {
+      club: clubs[1], // Barcelona
+      title: "Umpire - Torneo Juvenil Sala",
+      desc: "Indoor youth tournament weekend, several matches. Regional license is enough.",
+      level: "AMATEUR",
+      licenseLevelRequired: "REGIONAL",
+      modality: "SALA",
+      umpireCategory: "JUVENIL",
+      matchDate: daysFromNow(35),
+      salary: 90,
+    },
+    {
+      club: clubs[5], // Buenos Aires
+      title: "Arbitro Internacional - Clasico Femenino",
+      desc: "Women's derby, international license required. Accommodation included.",
+      level: "PROFESSIONAL",
+      licenseLevelRequired: "INTERNACIONAL",
+      modality: "CESPED",
+      umpireCategory: "FEMENINO",
+      matchDate: daysFromNow(14),
+      salary: 250,
+    },
+    {
+      club: clubs[10], // Rotterdam
+      title: "Umpire - Veteranos Indoor Cup",
+      desc: "Veterans indoor cup, friendly atmosphere. Any license level.",
+      level: "AMATEUR",
+      licenseLevelRequired: "REGIONAL",
+      modality: "INDOOR",
+      umpireCategory: "VETERANOS",
+      matchDate: daysFromNow(50),
+      salary: 70,
+    },
+  ];
+
+  const umpireJobs = [];
+  for (const job of umpireJobData) {
+    umpireJobs.push(
+      await prisma.jobOpportunity.create({
+        data: {
+          title: job.title,
+          description: job.desc,
+          positionType: "UMPIRE",
+          level: job.level as any,
+          clubId: job.club.id,
+          country: job.club.country,
+          city: job.club.city,
+          salary: job.salary,
+          currency: "EUR",
+          status: "OPEN",
+          licenseLevelRequired: job.licenseLevelRequired as any,
+          modality: job.modality as any,
+          umpireCategory: job.umpireCategory as any,
+          matchDate: job.matchDate,
+          benefits: "Travel expenses covered, match fee paid within 7 days",
+        },
+      }),
+    );
+  }
+
+  // umpire_garcia is umpires[0] (first entry of umpireData)
+  await prisma.jobApplication.create({
+    data: {
+      jobOpportunityId: umpireJobs[0].id,
+      userId: umpires[0].id,
+      coverLetter:
+        "International license holder with 600+ top-flight matches. Available on the date.",
+    },
+  });
+
+  console.log(
+    `✅ Created ${umpireJobs.length} umpire job opportunities (+1 application from ${umpires[0].username})\n`,
+  );
 
   // ========== TRAJECTORIES ==========
   console.log("🏆 Creating career trajectories...");
@@ -1123,6 +1424,7 @@ async function main() {
   console.log(`   - 1 super admin`);
   console.log(`   - ${players.length} players`);
   console.log(`   - ${coaches.length} coaches`);
+  console.log(`   - ${umpires.length} umpires`);
   console.log(`   - ${jobData.length} job opportunities`);
   console.log(`   - ${trajCount} career trajectories\n`);
 }

@@ -2,6 +2,7 @@ type AdminDashboardStats {
   totalUsersCount: Int!
   playersCount: Int!
   coachesCount: Int!
+  umpiresCount: Int!
   clubsCount: Int!
   superAdminsCount: Int!
   activeUsersCount: Int!
@@ -26,6 +27,8 @@ type AdminDashboardStats {
   activeClubMembershipsCount: Int!
   newUsersLast7Days: Int!
   newUsersLast30Days: Int!
+  umpireJobsCount: Int!
+  umpireApplicationsCount: Int!
 }
 
 extend type Query {

@@ -14,6 +14,13 @@ const mockPrismaService = {
     deleteMany: jest.fn(),
     createMany: jest.fn(),
   },
+  umpireCertification: {
+    deleteMany: jest.fn(),
+    createMany: jest.fn(),
+  },
+  clubMember: {
+    findFirst: jest.fn(),
+  },
 };
 
 describe("UsersService", () => {
@@ -173,6 +180,111 @@ describe("UsersService", () => {
         orderBy: { createdAt: "desc" },
       });
       expect(result).toEqual(mockPlayers);
+    });
+  });
+
+  // ── updateUser (DB check mirrors) ──────────────────────────────────────────
+  describe("updateUser - value validation", () => {
+    it.each([
+      [{ yearsOfExperience: -1 }, "yearsOfExperience"],
+      [{ matchesOfficiated: -5 }, "matchesOfficiated"],
+      [{ certificationYear: 1900 }, "certificationYear"],
+      [{ certificationYear: 2200 }, "certificationYear"],
+    ])("rejects %p", async (data, label) => {
+      await expect(service.updateUser("user-1", data as any)).rejects.toThrow(label);
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it("rejects a trajectory that ends before it starts", async () => {
+      await expect(
+        service.updateUser("user-1", {
+          trajectories: [
+            { title: "t", organization: "o", period: "p", startDate: "2024-01-01", endDate: "2023-01-01" },
+          ],
+        }),
+      ).rejects.toThrow("cannot end before it starts");
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── assertActiveClubMember ─────────────────────────────────────────────────
+  describe("assertActiveClubMember", () => {
+    it("passes when an ACTIVE membership exists", async () => {
+      prisma.clubMember.findFirst.mockResolvedValue({ id: "m1" });
+      await expect(
+        service.assertActiveClubMember("u1", "c1"),
+      ).resolves.toBeUndefined();
+      expect(prisma.clubMember.findFirst).toHaveBeenCalledWith({
+        where: { userId: "u1", clubId: "c1", status: "ACTIVE" },
+        select: { id: true },
+      });
+    });
+
+    it("throws Forbidden when there is no active membership", async () => {
+      prisma.clubMember.findFirst.mockResolvedValue(null);
+      await expect(service.assertActiveClubMember("u1", "c1")).rejects.toThrow(
+        "active member",
+      );
+    });
+  });
+
+  // ── updateUser (umpire) ────────────────────────────────────────────────────
+  describe("updateUser - umpire fields", () => {
+    it("rejects umpire fields for non-umpire roles", async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: "PLAYER" });
+
+      await expect(
+        service.updateUser("user-1", { licenseLevel: "NACIONAL" }),
+      ).rejects.toThrow("only available for the UMPIRE role");
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it("resets isVerified when license identity changes", async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        role: "UMPIRE",
+        isVerified: true,
+        licenseLevel: "NACIONAL",
+        certifyingBody: "CAH",
+        licenseNumber: "A-1",
+      });
+      prisma.user.update.mockResolvedValue({ id: "user-1" });
+
+      await service.updateUser("user-1", { licenseNumber: "A-2" });
+
+      expect(prisma.user.update.mock.calls[0][0].data.isVerified).toBe(false);
+    });
+
+    it("keeps isVerified when only non-identity umpire fields change", async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        role: "UMPIRE",
+        isVerified: true,
+        licenseLevel: "NACIONAL",
+        certifyingBody: "CAH",
+        licenseNumber: "A-1",
+      });
+      prisma.user.update.mockResolvedValue({ id: "user-1" });
+
+      await service.updateUser("user-1", { matchesOfficiated: 120 });
+
+      expect(prisma.user.update.mock.calls[0][0].data).not.toHaveProperty(
+        "isVerified",
+      );
+    });
+
+    it("replaces certifications", async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: "UMPIRE", isVerified: false });
+      prisma.user.update.mockResolvedValue({ id: "user-1" });
+
+      await service.updateUser("user-1", {
+        umpireCertifications: [
+          { name: "Nivel 2", issuer: "FIH", issuedAt: "2024-05-01" },
+        ],
+      });
+
+      expect(prisma.umpireCertification.deleteMany).toHaveBeenCalledWith({
+        where: { userId: "user-1" },
+      });
+      expect(prisma.umpireCertification.createMany).toHaveBeenCalledTimes(1);
     });
   });
 

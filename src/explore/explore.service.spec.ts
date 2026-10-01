@@ -64,5 +64,44 @@ describe("ExploreService", () => {
         service.getExploreUsers({ role: "SUPERADMIN" }),
       ).rejects.toThrow("Invalid role. Allowed: PLAYER, COACH, CLUB");
     });
+
+    it("accepts UMPIRE as a role filter", async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await service.getExploreUsers({ role: "umpire" });
+
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ role: "UMPIRE" }),
+        }),
+      );
+    });
+
+    it("applies umpire filters and forces role UMPIRE", async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await service.getExploreUsers({
+        licenseLevel: "internacional",
+        modality: "sala",
+        umpireCategory: "femenino",
+      });
+
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            role: "UMPIRE",
+            licenseLevel: "INTERNACIONAL",
+            modalities: { has: "SALA" },
+            umpireCategories: { has: "FEMENINO" },
+          }),
+        }),
+      );
+    });
+
+    it("throws on an invalid umpire filter value", async () => {
+      await expect(
+        service.getExploreUsers({ licenseLevel: "GALACTICO" }),
+      ).rejects.toThrow("Invalid licenseLevel");
+    });
   });
 });

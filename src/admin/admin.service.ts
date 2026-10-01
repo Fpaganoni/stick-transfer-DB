@@ -36,6 +36,7 @@ export class AdminService {
       totalUsersCount,
       playersCount,
       coachesCount,
+      umpiresCount,
       clubsCount,
       superAdminsCount,
       activeUsersCount,
@@ -60,10 +61,13 @@ export class AdminService {
       activeClubMembershipsCount,
       newUsersLast7Days,
       newUsersLast30Days,
+      umpireJobsCount,
+      umpireApplicationsCount,
     ] = await this.prisma.$transaction([
       this.prisma.user.count(),
       this.prisma.user.count({ where: { role: "PLAYER" } }),
       this.prisma.user.count({ where: { role: "COACH" } }),
+      this.prisma.user.count({ where: { role: "UMPIRE" } }),
       this.prisma.user.count({ where: { role: "CLUB" } }),
       this.prisma.user.count({ where: { role: "SUPERADMIN" } }),
       this.prisma.user.count({ where: { isActive: true } }),
@@ -90,12 +94,17 @@ export class AdminService {
       this.prisma.clubMember.count({ where: { status: "ACTIVE" } }),
       this.prisma.user.count({ where: { createdAt: { gte: sevenDaysAgo } } }),
       this.prisma.user.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
+      this.prisma.jobOpportunity.count({ where: { positionType: "UMPIRE" } }),
+      this.prisma.jobApplication.count({
+        where: { jobOpportunity: { positionType: "UMPIRE" } },
+      }),
     ]);
 
     return {
       totalUsersCount,
       playersCount,
       coachesCount,
+      umpiresCount,
       clubsCount,
       superAdminsCount,
       activeUsersCount,
@@ -120,6 +129,8 @@ export class AdminService {
       activeClubMembershipsCount,
       newUsersLast7Days,
       newUsersLast30Days,
+      umpireJobsCount,
+      umpireApplicationsCount,
     };
   }
 }

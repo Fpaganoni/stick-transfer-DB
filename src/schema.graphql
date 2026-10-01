@@ -2,12 +2,58 @@ enum Role {
   PLAYER
   COACH
   CLUB
+  UMPIRE
   SUPERADMIN
+}
+
+enum UmpireLicenseLevel {
+  REGIONAL
+  NACIONAL
+  INTERNACIONAL
+}
+
+enum TravelAvailability {
+  LOCAL
+  REGIONAL
+  NACIONAL
+  INTERNACIONAL
+}
+
+enum UmpireModality {
+  CESPED
+  SALA
+  INDOOR
+}
+
+enum UmpireCategory {
+  JUVENIL
+  MAYORES
+  MASCULINO
+  FEMENINO
+  VETERANOS
+}
+
+type UmpireCertification {
+  id: ID!
+  name: String!
+  issuer: String!
+  issuedAt: String
+  fileUrl: String
+  order: Int!
+}
+
+input UmpireCertificationInput {
+  name: String!
+  issuer: String!
+  issuedAt: String
+  fileUrl: String
+  order: Int
 }
 
 type User {
   id: ID!
-  email: String!
+  """Only visible to the user themself and super admins; null for everyone else."""
+  email: String
   name: String!
   username: String
   avatar: String
@@ -25,6 +71,18 @@ type User {
   multimedia: [String!]!
   dateOfBirth: String
   level: UserLevel
+  # Umpire-only fields
+  licenseLevel: UmpireLicenseLevel
+  certifyingBody: String
+  """Only visible to the umpire themself and super admins; null for everyone else."""
+  licenseNumber: String
+  certificationYear: Int
+  matchesOfficiated: Int
+  travelAvailability: TravelAvailability
+  languages: [String!]!
+  modalities: [UmpireModality!]!
+  umpireCategories: [UmpireCategory!]!
+  umpireCertifications: [UmpireCertification!]!
   isVerified: Boolean!
   isEmailVerified: Boolean!
   isActive: Boolean!
@@ -121,6 +179,11 @@ type JobOpportunity {
   gender: Gender
   expiresAt: String
   division: String
+  """Only set for UMPIRE opportunities."""
+  licenseLevelRequired: UmpireLicenseLevel
+  modality: UmpireModality
+  umpireCategory: UmpireCategory
+  matchDate: String
   applications: [JobApplication!]!
   isSavedByCurrentUser: Boolean!
   createdAt: String!
@@ -354,6 +417,11 @@ input JobOpportunityFiltersInput {
   status: String
   division: String
   expiresAfter: String
+  licenseLevelRequired: UmpireLicenseLevel
+  modality: UmpireModality
+  umpireCategory: UmpireCategory
+  matchDateFrom: String
+  matchDateTo: String
 }
 
 input NewsFiltersInput {
@@ -393,10 +461,12 @@ type Query {
   me: User
   players: [User!]!
   coaches: [User!]!
+  umpires: [User!]!
 
   # Clubs & Teams
   clubs: [Club!]!
   club(id: ID!): Club
+  """Super admin only."""
   clubAdmins: [ClubAdminView!]!
   teamsByClub(clubId: ID!): [Team!]!
 
@@ -410,8 +480,11 @@ type Query {
   savedJobOpportunities: [JobOpportunity!]!
 
   # Job Applications
+  """Owning club or super admin only."""
   jobApplications(jobOpportunityId: String!, status: String): [JobApplication!]!
+  """Own applications or super admin only."""
   userApplications(userId: String!, status: String): [JobApplication!]!
+  """Applicant, owning club or super admin only."""
   jobApplication(id: String!): JobApplication
   getClubApplications(
     clubId: ID!
@@ -432,7 +505,8 @@ type Query {
   superAdminNewsArticles(filters: NewsFiltersInput, page: Int, limit: Int): NewsPaginatedResult!
 
   # Messaging
-  myConversations(userId: String!): [Conversation!]!
+  """userId is deprecated and ignored: returns the authenticated user's conversations."""
+  myConversations(userId: String): [Conversation!]!
   conversation(id: String!): Conversation
   messages(conversationId: String!): [Message!]!
 
@@ -442,6 +516,9 @@ type Query {
     country: String
     position: String
     level: String
+    licenseLevel: UmpireLicenseLevel
+    modality: UmpireModality
+    umpireCategory: UmpireCategory
     searchQuery: String
     search: String
     limit: Int
@@ -499,6 +576,16 @@ type Mutation {
     dateOfBirth: String
     level: UserLevel
     trajectories: [TrajectoryInput!]
+    licenseLevel: UmpireLicenseLevel
+    certifyingBody: String
+    licenseNumber: String
+    certificationYear: Int
+    matchesOfficiated: Int
+    travelAvailability: TravelAvailability
+    languages: [String!]
+    modalities: [UmpireModality!]
+    umpireCategories: [UmpireCategory!]
+    umpireCertifications: [UmpireCertificationInput!]
   ): User!
 
   # Uploads
@@ -524,11 +611,16 @@ type Mutation {
   """Super admin only: sets a club's verification status directly."""
   adminSetClubVerification(clubId: ID!, status: VerificationStatus!): Club!
   createTeam(clubId: String!, name: String!, category: String!): Team!
+  """
+  Club admin or super admin only. invitedBy is deprecated and ignored: the
+  inviter is the authenticated user.
+  """
   invitePlayerToClub(
     clubId: String!
     userId: String!
-    invitedBy: String!
+    invitedBy: String
   ): ClubMember!
+  """Only the invited user can accept a pending invitation."""
   acceptMembership(membershipId: String!): ClubMember!
   updateClub(
     id: ID!
@@ -568,6 +660,10 @@ type Mutation {
     gender: Gender
     expiresAt: String
     division: String
+    licenseLevelRequired: UmpireLicenseLevel
+    modality: UmpireModality
+    umpireCategory: UmpireCategory
+    matchDate: String
   ): JobOpportunity!
   updateJobOpportunity(id: String!, status: String): JobOpportunity!
   deleteJobOpportunity(id: String!): Boolean!
@@ -575,9 +671,10 @@ type Mutation {
   unsaveJobOpportunity(jobOpportunityId: ID!): Boolean!
 
   # Job Applications
+  """userId is deprecated and ignored: the applicant is the authenticated user. UMPIRE jobs accept only UMPIRE/SUPERADMIN applicants (403 otherwise)."""
   applyForJob(
     jobOpportunityId: String!
-    userId: String!
+    userId: String
     coverLetter: String
     resumeUrl: String
   ): JobApplication!
@@ -586,7 +683,8 @@ type Mutation {
     status: String!
     notes: String
   ): JobApplication!
-  withdrawApplication(id: String!, userId: String!): JobApplication!
+  """userId is deprecated and ignored: the applicant is the authenticated user."""
+  withdrawApplication(id: String!, userId: String): JobApplication!
 
   # Follows
   follow(
@@ -624,11 +722,13 @@ type Mutation {
   unpublishNewsArticle(id: ID!): NewsArticle!
 
   # Messaging
+  """The authenticated user is always added as a participant."""
   startConversation(participantIds: [String!]!): Conversation!
+  """senderId is deprecated and ignored: the sender is the authenticated user."""
   sendMessage(
     conversationId: String!
-    senderId: String!
     content: String!
+    senderId: String
   ): Message!
   markMessageAsRead(messageId: String!): Boolean!
 

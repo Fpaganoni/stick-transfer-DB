@@ -1,7 +1,16 @@
-import { Injectable, ForbiddenException, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  ForbiddenException,
+  NotFoundException,
+} from "@nestjs/common";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { NotificationType } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
+
+export type JobActor = { userId: string; role: string };
+
+export const POSITION_TYPES = ["PLAYER", "COACH", "STAFF", "UMPIRE", "OTHER"];
 
 @Injectable()
 export class JobsService {
@@ -9,6 +18,37 @@ export class JobsService {
     private prisma: PrismaService,
     private eventEmitter: EventEmitter2,
   ) {}
+
+  /** Job.clubId === Club.id === owning User.id. Owner club or SUPERADMIN only. */
+  private async assertCanManageJob(jobOpportunityId: string, actor: JobActor) {
+    const job = await this.prisma.jobOpportunity.findUnique({
+      where: { id: jobOpportunityId },
+      select: { id: true, clubId: true },
+    });
+    if (!job) throw new NotFoundException("Job opportunity not found");
+    if (job.clubId !== actor.userId && actor.role !== "SUPERADMIN") {
+      throw new ForbiddenException("You do not own this job opportunity");
+    }
+  }
+
+  /** Case-insensitive; invalid values become a 400 instead of a masked 500. */
+  private parsePositionType(raw: string): string {
+    const value = String(raw).trim().toUpperCase();
+    if (!POSITION_TYPES.includes(value)) {
+      throw new BadRequestException(
+        `Invalid positionType. Allowed: ${POSITION_TYPES.join(", ")}`,
+      );
+    }
+    return value;
+  }
+
+  private parseDate(raw: string, label: string): Date {
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) {
+      throw new BadRequestException(`Invalid ${label}. Use an ISO 8601 date`);
+    }
+    return d;
+  }
 
   async findAll(
     filters?: {
@@ -21,13 +61,20 @@ export class JobsService {
       status?: string;
       division?: string;
       expiresAfter?: string;
+      licenseLevelRequired?: string;
+      modality?: string;
+      umpireCategory?: string;
+      matchDateFrom?: string;
+      matchDateTo?: string;
     },
     page?: number,
     limit?: number,
   ) {
     const where: any = {};
     if (filters?.country) where.country = filters.country;
-    if (filters?.positionType) where.positionType = filters.positionType as any;
+    if (filters?.positionType) {
+      where.positionType = this.parsePositionType(filters.positionType) as any;
+    }
     if (filters?.level) where.level = filters.level as any;
     if (filters?.gender) where.gender = filters.gender as any;
     if (filters?.clubId) where.clubId = filters.clubId;
@@ -35,6 +82,21 @@ export class JobsService {
     if (filters?.division) where.division = filters.division;
     if (filters?.expiresAfter) {
       where.expiresAt = { gte: new Date(filters.expiresAfter) };
+    }
+    if (filters?.licenseLevelRequired) {
+      where.licenseLevelRequired = filters.licenseLevelRequired as any;
+    }
+    if (filters?.modality) where.modality = filters.modality as any;
+    if (filters?.umpireCategory) where.umpireCategory = filters.umpireCategory as any;
+    if (filters?.matchDateFrom || filters?.matchDateTo) {
+      where.matchDate = {
+        ...(filters.matchDateFrom && {
+          gte: this.parseDate(filters.matchDateFrom, "matchDateFrom"),
+        }),
+        ...(filters.matchDateTo && {
+          lte: this.parseDate(filters.matchDateTo, "matchDateTo"),
+        }),
+      };
     }
     if (filters?.search) {
       where.OR = [
@@ -80,7 +142,31 @@ export class JobsService {
     gender?: string;
     expiresAt?: string;
     division?: string;
+    licenseLevelRequired?: string;
+    modality?: string;
+    umpireCategory?: string;
+    matchDate?: string;
   }) {
+    if (data.salary != null && data.salary < 0) {
+      throw new BadRequestException("salary cannot be negative");
+    }
+
+    const positionType = this.parsePositionType(data.positionType);
+    if (
+      positionType !== "UMPIRE" &&
+      (data.licenseLevelRequired ||
+        data.modality ||
+        data.umpireCategory ||
+        data.matchDate)
+    ) {
+      throw new BadRequestException(
+        "licenseLevelRequired, modality, umpireCategory and matchDate are only allowed when positionType is UMPIRE",
+      );
+    }
+    const matchDate = data.matchDate
+      ? this.parseDate(data.matchDate, "matchDate")
+      : undefined;
+
     const activeJobsCount = await this.prisma.jobOpportunity.count({
       where: { clubId: data.clubId, status: "OPEN" },
     });
@@ -93,10 +179,14 @@ export class JobsService {
     return this.prisma.jobOpportunity.create({
       data: {
         ...data,
-        positionType: data.positionType as any,
+        positionType: positionType as any,
         level: data.level as any,
         currency: data.currency as any,
         gender: data.gender as any,
+        licenseLevelRequired: data.licenseLevelRequired as any,
+        modality: data.modality as any,
+        umpireCategory: data.umpireCategory as any,
+        matchDate,
         expiresAt: data.expiresAt ? new Date(data.expiresAt) : undefined,
       },
       include: {
@@ -105,7 +195,8 @@ export class JobsService {
     });
   }
 
-  async update(id: string, data: { status?: string }) {
+  async update(id: string, data: { status?: string }, actor: JobActor) {
+    await this.assertCanManageJob(id, actor);
     return this.prisma.jobOpportunity.update({
       where: { id },
       data: {
@@ -117,7 +208,8 @@ export class JobsService {
     });
   }
 
-  async delete(id: string) {
+  async delete(id: string, actor: JobActor) {
+    await this.assertCanManageJob(id, actor);
     await this.prisma.jobOpportunity.delete({ where: { id } });
     return true;
   }
@@ -126,9 +218,25 @@ export class JobsService {
   async applyForJob(data: {
     jobOpportunityId: string;
     userId: string;
+    role: string;
     coverLetter?: string;
     resumeUrl?: string;
   }) {
+    const job = await this.prisma.jobOpportunity.findUnique({
+      where: { id: data.jobOpportunityId },
+      select: { id: true, positionType: true },
+    });
+    if (!job) throw new NotFoundException("Job opportunity not found");
+    if (
+      job.positionType === "UMPIRE" &&
+      data.role !== "UMPIRE" &&
+      data.role !== "SUPERADMIN"
+    ) {
+      throw new ForbiddenException(
+        "Only umpires can apply to UMPIRE job opportunities",
+      );
+    }
+
     try {
       const application = await this.prisma.jobApplication.create({
         data: {
@@ -164,7 +272,12 @@ export class JobsService {
     }
   }
 
-  async getApplications(jobOpportunityId: string, status?: string) {
+  async getApplications(
+    jobOpportunityId: string,
+    status: string | undefined,
+    actor: JobActor,
+  ) {
+    await this.assertCanManageJob(jobOpportunityId, actor);
     return this.prisma.jobApplication.findMany({
       where: {
         jobOpportunityId,
@@ -194,8 +307,9 @@ export class JobsService {
     });
   }
 
-  async getApplicationById(id: string) {
-    return this.prisma.jobApplication.findUnique({
+  /** Visible to the applicant, the owning club and SUPERADMIN only. */
+  async getApplicationById(id: string, actor: JobActor) {
+    const application = await this.prisma.jobApplication.findUnique({
       where: { id },
       include: {
         user: true,
@@ -206,6 +320,15 @@ export class JobsService {
         },
       },
     });
+    if (!application) return null;
+    const allowed =
+      application.userId === actor.userId ||
+      application.jobOpportunity.clubId === actor.userId ||
+      actor.role === "SUPERADMIN";
+    if (!allowed) {
+      throw new ForbiddenException("You cannot view this application");
+    }
+    return application;
   }
 
   async updateApplicationStatus(

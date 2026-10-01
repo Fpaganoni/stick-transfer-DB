@@ -1,3 +1,8 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { ClubsService } from "./clubs.service";
@@ -12,6 +17,7 @@ const mockPrismaService = {
   },
   clubMember: {
     findFirst: jest.fn(),
+    findUnique: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
   },
@@ -232,19 +238,61 @@ describe("ClubsService", () => {
     });
   });
 
+  describe("updateClub - validation", () => {
+    it("should reject an out-of-range foundedYear", async () => {
+      await expect(service.updateClub("club-1", { foundedYear: 1500 })).rejects.toThrow(
+        "foundedYear",
+      );
+      expect(prisma.club.update).not.toHaveBeenCalled();
+    });
+  });
+
   // ── acceptMembership ──────────────────────────────────────────────────────
   describe("acceptMembership", () => {
-    it("should update membership status to ACTIVE", async () => {
+    it("should update membership status to ACTIVE for the invited user", async () => {
       const mockMember = { id: "member-1", status: "ACTIVE" };
+      prisma.clubMember.findUnique.mockResolvedValue({
+        id: "member-1", userId: "user-1", status: "PENDING",
+      });
       prisma.clubMember.update.mockResolvedValue(mockMember);
 
-      const result = await service.acceptMembership("member-1");
+      const result = await service.acceptMembership("member-1", "user-1");
 
       expect(prisma.clubMember.update).toHaveBeenCalledWith({
         where: { id: "member-1" },
         data: { status: "ACTIVE" },
       });
       expect(result).toEqual(mockMember);
+    });
+
+    it("should reject someone other than the invited user", async () => {
+      prisma.clubMember.findUnique.mockResolvedValue({
+        id: "member-1", userId: "user-1", status: "PENDING",
+      });
+
+      await expect(service.acceptMembership("member-1", "attacker")).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(prisma.clubMember.update).not.toHaveBeenCalled();
+    });
+
+    it("should reject when the invitation is not pending", async () => {
+      prisma.clubMember.findUnique.mockResolvedValue({
+        id: "member-1", userId: "user-1", status: "REJECTED",
+      });
+
+      await expect(service.acceptMembership("member-1", "user-1")).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(prisma.clubMember.update).not.toHaveBeenCalled();
+    });
+
+    it("should throw NotFound for an unknown membership", async () => {
+      prisma.clubMember.findUnique.mockResolvedValue(null);
+
+      await expect(service.acceptMembership("nope", "user-1")).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

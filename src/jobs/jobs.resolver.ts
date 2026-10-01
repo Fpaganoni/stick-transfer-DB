@@ -29,6 +29,19 @@ export class JobsResolver {
     return user;
   }
 
+  /**
+   * Legacy clients still send their own userId; identity now comes from the
+   * session, so a client-supplied id is only accepted when it matches.
+   */
+  private assertSameUserIfProvided(
+    currentUser: { userId: string },
+    claimedUserId?: string,
+  ) {
+    if (claimedUserId && claimedUserId !== currentUser.userId) {
+      throw new ForbiddenException("You can only act on behalf of yourself");
+    }
+  }
+
   // Field resolver for isSavedByCurrentUser — optional auth, false for anonymous
   @ResolveField()
   async isSavedByCurrentUser(@Parent() job: any, @Context() context: any) {
@@ -89,7 +102,11 @@ export class JobsResolver {
     @Args("benefits", { nullable: true }) benefits?: string,
     @Args("gender", { nullable: true }) gender?: string,
     @Args("expiresAt", { nullable: true }) expiresAt?: string,
-    @Args("division", { nullable: true }) division?: string
+    @Args("division", { nullable: true }) division?: string,
+    @Args("licenseLevelRequired", { nullable: true }) licenseLevelRequired?: string,
+    @Args("modality", { nullable: true }) modality?: string,
+    @Args("umpireCategory", { nullable: true }) umpireCategory?: string,
+    @Args("matchDate", { nullable: true }) matchDate?: string
   ) {
     const currentUser = this.requireUser(context);
     if (currentUser.role !== "CLUB") {
@@ -110,33 +127,47 @@ export class JobsResolver {
       gender,
       expiresAt,
       division,
+      licenseLevelRequired,
+      modality,
+      umpireCategory,
+      matchDate,
     });
   }
 
   @Mutation(() => Object)
   async updateJobOpportunity(
+    @Context() context: any,
     @Args("id") id: string,
     @Args("status", { nullable: true }) status?: string
   ) {
-    return this.jobsService.update(id, { status });
+    const currentUser = this.requireUser(context);
+    return this.jobsService.update(id, { status }, currentUser);
   }
 
   @Mutation(() => Boolean)
-  async deleteJobOpportunity(@Args("id") id: string) {
-    return this.jobsService.delete(id);
+  async deleteJobOpportunity(
+    @Context() context: any,
+    @Args("id") id: string,
+  ) {
+    const currentUser = this.requireUser(context);
+    return this.jobsService.delete(id, currentUser);
   }
 
   // Job Applications
   @Mutation(() => Object)
   async applyForJob(
+    @Context() context: any,
     @Args("jobOpportunityId") jobOpportunityId: string,
-    @Args("userId") userId: string,
+    @Args("userId", { nullable: true }) userId?: string,
     @Args("coverLetter", { nullable: true }) coverLetter?: string,
     @Args("resumeUrl", { nullable: true }) resumeUrl?: string
   ) {
+    const currentUser = this.requireUser(context);
+    this.assertSameUserIfProvided(currentUser, userId);
     return this.jobsService.applyForJob({
       jobOpportunityId,
-      userId,
+      userId: currentUser.userId,
+      role: currentUser.role,
       coverLetter,
       resumeUrl,
     });
@@ -144,23 +175,31 @@ export class JobsResolver {
 
   @Query(() => [Object])
   async jobApplications(
+    @Context() context: any,
     @Args("jobOpportunityId") jobOpportunityId: string,
     @Args("status", { nullable: true }) status?: string
   ) {
-    return this.jobsService.getApplications(jobOpportunityId, status);
+    const currentUser = this.requireUser(context);
+    return this.jobsService.getApplications(jobOpportunityId, status, currentUser);
   }
 
   @Query(() => [Object])
   async userApplications(
+    @Context() context: any,
     @Args("userId") userId: string,
     @Args("status", { nullable: true }) status?: string
   ) {
+    const currentUser = this.requireUser(context);
+    if (currentUser.userId !== userId && currentUser.role !== "SUPERADMIN") {
+      throw new ForbiddenException("You can only view your own applications");
+    }
     return this.jobsService.getUserApplications(userId, status);
   }
 
   @Query(() => Object, { nullable: true })
-  async jobApplication(@Args("id") id: string) {
-    return this.jobsService.getApplicationById(id);
+  async jobApplication(@Context() context: any, @Args("id") id: string) {
+    const currentUser = this.requireUser(context);
+    return this.jobsService.getApplicationById(id, currentUser);
   }
 
   @Query(() => [Object])
@@ -199,9 +238,12 @@ export class JobsResolver {
 
   @Mutation(() => Object)
   async withdrawApplication(
+    @Context() context: any,
     @Args("id") id: string,
-    @Args("userId") userId: string
+    @Args("userId", { nullable: true }) userId?: string
   ) {
-    return this.jobsService.withdrawApplication(id, userId);
+    const currentUser = this.requireUser(context);
+    this.assertSameUserIfProvided(currentUser, userId);
+    return this.jobsService.withdrawApplication(id, currentUser.userId);
   }
 }

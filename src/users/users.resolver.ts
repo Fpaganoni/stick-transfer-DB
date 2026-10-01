@@ -8,7 +8,12 @@ import {
   Parent,
   ID,
 } from "@nestjs/graphql";
-import { BadRequestException, UseGuards } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  UnauthorizedException,
+  UseGuards,
+} from "@nestjs/common";
 import { UsersService } from "./users.service";
 import { AuthService } from "../auth/auth.service";
 import { CloudinaryService } from "../uploads/cloudinary.service";
@@ -16,6 +21,12 @@ import { PrismaService } from "../prisma.service";
 import { ClubsService } from "../clubs/clubs.service";
 import { SocialService } from "../social/social.service";
 import { GqlAuthGuard } from "../auth/gql-auth.guard";
+
+/**
+ * Marks a user object as the caller's own profile when the session cookie was
+ * only just issued (register/login), so it is not yet present on the request.
+ */
+const SELF_VIEW = Symbol("selfView");
 
 @Resolver("User")
 export class UsersResolver {
@@ -30,6 +41,24 @@ export class UsersResolver {
 
   private getCurrentUser(context: any): { userId: string; role: string } | null {
     return this.authService.getUserFromRequest(context?.req);
+  }
+
+  private requireUser(context: any): { userId: string; role: string } {
+    const user = this.getCurrentUser(context);
+    if (!user) throw new UnauthorizedException("Authentication required");
+    return user;
+  }
+
+  /** Caller must be the target user themself or a SUPERADMIN. */
+  private requireSelfOrAdmin(
+    context: any,
+    targetUserId: string,
+  ): { userId: string; role: string } {
+    const user = this.requireUser(context);
+    if (user.userId !== targetUserId && user.role !== "SUPERADMIN") {
+      throw new ForbiddenException("You can only modify your own profile");
+    }
+    return user;
   }
 
   @Mutation(() => Object)
@@ -55,10 +84,10 @@ export class UsersResolver {
       // Validate role if provided — SUPERADMIN cannot self-register
       if (
         normalizedRole &&
-        !["PLAYER", "COACH", "CLUB"].includes(normalizedRole)
+        !["PLAYER", "COACH", "CLUB", "UMPIRE"].includes(normalizedRole)
       ) {
         throw new BadRequestException(
-          "Invalid role. Allowed roles: PLAYER, COACH, CLUB",
+          "Invalid role. Allowed roles: PLAYER, COACH, CLUB, UMPIRE",
         );
       }
 
@@ -101,7 +130,7 @@ export class UsersResolver {
 
       const token = await this.authService.login(user);
       this.authService.setAuthCookie(context.res, token.access_token);
-      return user;
+      return { ...user, [SELF_VIEW]: true };
     } catch (error) {
       if (error.code === "P2002") {
         throw new BadRequestException(`${error.meta.target[0]} already exists`);
@@ -120,7 +149,7 @@ export class UsersResolver {
     if (!user) throw new Error("Invalid credentials");
     const t = await this.authService.login(user);
     this.authService.setAuthCookie(context.res, t.access_token);
-    return user;
+    return { ...user, [SELF_VIEW]: true };
   }
 
   @Mutation(() => Boolean)
@@ -131,9 +160,11 @@ export class UsersResolver {
 
   @Mutation(() => Boolean)
   async uploadAvatar(
+    @Context() context: any,
     @Args("userId", { type: () => ID }) userId: string,
     @Args("base64") base64: string,
   ) {
+    this.requireSelfOrAdmin(context, userId);
     try {
       // accepts a data-url or base64 string
       const res = await this.cloudinary.uploadBase64(base64, "avatars");
@@ -146,9 +177,11 @@ export class UsersResolver {
 
   @Mutation(() => Boolean)
   async uploadCoverImage(
+    @Context() context: any,
     @Args("userId", { type: () => ID }) userId: string,
     @Args("base64") base64: string,
   ) {
+    this.requireSelfOrAdmin(context, userId);
     try {
       // accepts a data-url or base64 string
       const res = await this.cloudinary.uploadBase64(base64, "covers");
@@ -161,13 +194,21 @@ export class UsersResolver {
 
   @Mutation(() => String)
   async uploadCV(
+    @Context() context: any,
     @Args("userId", { type: () => ID }) userId: string,
     @Args("base64") base64: string,
   ) {
+    this.requireSelfOrAdmin(context, userId);
     const user = await this.usersService.findById(userId);
     if (!user) throw new Error("User not found");
-    if (user.role !== "PLAYER" && user.role !== "COACH") {
-      throw new Error("CV upload is only available for PLAYER and COACH roles");
+    if (
+      user.role !== "PLAYER" &&
+      user.role !== "COACH" &&
+      user.role !== "UMPIRE"
+    ) {
+      throw new Error(
+        "CV upload is only available for PLAYER, COACH and UMPIRE roles",
+      );
     }
     if (!base64.startsWith("data:application/pdf;base64,")) {
       throw new Error("Invalid file format. Only PDF files are allowed.");
@@ -183,7 +224,11 @@ export class UsersResolver {
   }
 
   @Mutation(() => Boolean)
-  async deleteCV(@Args("userId", { type: () => ID }) userId: string) {
+  async deleteCV(
+    @Context() context: any,
+    @Args("userId", { type: () => ID }) userId: string,
+  ) {
+    this.requireSelfOrAdmin(context, userId);
     const user = await this.usersService.findById(userId);
     if (!user) throw new Error("User not found");
     await this.usersService.deleteCv(userId);
@@ -223,8 +268,14 @@ export class UsersResolver {
     return this.usersService.findByRole("COACH");
   }
 
+  @Query(() => [Object])
+  async umpires() {
+    return this.usersService.findByRole("UMPIRE");
+  }
+
   @Mutation(() => Object)
   async updateUser(
+    @Context() context: any,
     @Args("id") id: string,
     @Args("name", { nullable: true }) name?: string,
     @Args("username", { nullable: true }) username?: string,
@@ -244,7 +295,28 @@ export class UsersResolver {
     @Args("level", { nullable: true }) level?: string,
     @Args("trajectories", { type: () => [Object], nullable: true })
     trajectories?: any[],
+    @Args("licenseLevel", { nullable: true }) licenseLevel?: string,
+    @Args("certifyingBody", { nullable: true }) certifyingBody?: string,
+    @Args("licenseNumber", { nullable: true }) licenseNumber?: string,
+    @Args("certificationYear", { nullable: true }) certificationYear?: number,
+    @Args("matchesOfficiated", { nullable: true }) matchesOfficiated?: number,
+    @Args("travelAvailability", { nullable: true }) travelAvailability?: string,
+    @Args("languages", { type: () => [String], nullable: true })
+    languages?: string[],
+    @Args("modalities", { type: () => [String], nullable: true })
+    modalities?: string[],
+    @Args("umpireCategories", { type: () => [String], nullable: true })
+    umpireCategories?: string[],
+    @Args("umpireCertifications", { type: () => [Object], nullable: true })
+    umpireCertifications?: any[],
   ) {
+    const currentUser = this.requireSelfOrAdmin(context, id);
+
+    // Joining a club requires an accepted invitation; only admins can force it.
+    if (clubId && currentUser.role !== "SUPERADMIN") {
+      await this.usersService.assertActiveClubMember(id, clubId);
+    }
+
     try {
       return await this.usersService.updateUser(id, {
         name,
@@ -263,6 +335,16 @@ export class UsersResolver {
         dateOfBirth,
         level,
         trajectories,
+        licenseLevel,
+        certifyingBody,
+        licenseNumber,
+        certificationYear,
+        matchesOfficiated,
+        travelAvailability,
+        languages,
+        modalities,
+        umpireCategories,
+        umpireCertifications,
       });
     } catch (error) {
       if (error.code === "P2002") {
@@ -281,6 +363,36 @@ export class UsersResolver {
       include: { club: true },
       orderBy: { order: "asc" },
     });
+  }
+
+  @ResolveField()
+  async umpireCertifications(@Parent() user: any) {
+    return this.prisma.umpireCertification.findMany({
+      where: { userId: user.id },
+      orderBy: { order: "asc" },
+    });
+  }
+
+  /** Private fields are visible only to the owner and super admins. */
+  private canSeePrivateFields(user: any, context: any): boolean {
+    if (user?.[SELF_VIEW]) return true;
+    const currentUser = this.getCurrentUser(context);
+    if (!currentUser) return false;
+    return currentUser.userId === user.id || currentUser.role === "SUPERADMIN";
+  }
+
+  /** PRIVACY: email is visible only to the owner and super admins. */
+  @ResolveField()
+  async email(@Parent() user: any, @Context() context: any) {
+    return this.canSeePrivateFields(user, context) ? user.email : null;
+  }
+
+  /** PRIVACY: license number is visible only to the owner and super admins. */
+  @ResolveField()
+  async licenseNumber(@Parent() user: any, @Context() context: any) {
+    return this.canSeePrivateFields(user, context)
+      ? (user.licenseNumber ?? null)
+      : null;
   }
 
   @ResolveField()

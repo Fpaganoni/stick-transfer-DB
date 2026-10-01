@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException } from "@nestjs/common";
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from "@nestjs/common";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { NotificationType, VerificationStatus } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
@@ -227,7 +232,20 @@ export class ClubsService {
     return member;
   }
 
-  async acceptMembership(membershipId: string) {
+  /** Only the invited user can accept, and only while the invite is PENDING. */
+  async acceptMembership(membershipId: string, currentUserId: string) {
+    const membership = await this.prisma.clubMember.findUnique({
+      where: { id: membershipId },
+      select: { id: true, userId: true, status: true },
+    });
+    if (!membership) throw new NotFoundException("Membership not found");
+    if (membership.userId !== currentUserId) {
+      throw new ForbiddenException("This invitation is not addressed to you");
+    }
+    if (membership.status !== "PENDING") {
+      throw new BadRequestException("This invitation is no longer pending");
+    }
+
     return this.prisma.clubMember.update({
       where: { id: membershipId },
       data: { status: "ACTIVE" },
@@ -255,6 +273,13 @@ export class ClubsService {
       benefits?: string[];
     },
   ) {
+    if (
+      data.foundedYear != null &&
+      (data.foundedYear < 1800 || data.foundedYear > 2100)
+    ) {
+      throw new BadRequestException("foundedYear must be between 1800 and 2100");
+    }
+
     return this.prisma.club.update({
       where: { id },
       data,
