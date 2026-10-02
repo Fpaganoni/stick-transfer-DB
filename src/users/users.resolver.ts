@@ -373,7 +373,6 @@ export class UsersResolver {
     });
   }
 
-<<<<<<< HEAD
   /** Private fields are visible only to the owner and super admins. */
   private canSeePrivateFields(user: any, context: any): boolean {
     if (user?.[SELF_VIEW]) return true;
@@ -394,17 +393,6 @@ export class UsersResolver {
     return this.canSeePrivateFields(user, context)
       ? (user.licenseNumber ?? null)
       : null;
-=======
-  /** PRIVACY: license number is visible only to the owner and super admins. */
-  @ResolveField()
-  async licenseNumber(@Parent() user: any, @Context() context: any) {
-    const currentUser = this.getCurrentUser(context);
-    if (!currentUser) return null;
-    if (currentUser.userId === user.id || currentUser.role === "SUPERADMIN") {
-      return user.licenseNumber ?? null;
-    }
-    return null;
->>>>>>> 2af7aee015e5c76afd60635538e5eba3c4bbbc1e
   }
 
   @ResolveField()
