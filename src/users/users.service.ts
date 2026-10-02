@@ -1,8 +1,12 @@
+<<<<<<< HEAD
 import {
   BadRequestException,
   ForbiddenException,
   Injectable,
 } from "@nestjs/common";
+=======
+import { BadRequestException, Injectable } from "@nestjs/common";
+>>>>>>> 2af7aee015e5c76afd60635538e5eba3c4bbbc1e
 import { PrismaService } from "../prisma.service";
 import * as bcrypt from "bcrypt";
 
@@ -155,6 +159,7 @@ export class UsersService {
 
     const { certifyingBody, licenseNumber } = userUpdateData;
 
+<<<<<<< HEAD
     // Mirror the DB CHECK constraints so clients get a clear 400, not a masked 500
     if (userUpdateData.yearsOfExperience != null && userUpdateData.yearsOfExperience < 0) {
       throw new BadRequestException("yearsOfExperience cannot be negative");
@@ -172,6 +177,8 @@ export class UsersService {
       }
     }
 
+=======
+>>>>>>> 2af7aee015e5c76afd60635538e5eba3c4bbbc1e
     const hasUmpireData = [
       licenseLevel,
       certifyingBody,

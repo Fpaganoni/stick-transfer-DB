@@ -18,9 +18,12 @@ const mockPrismaService = {
     deleteMany: jest.fn(),
     createMany: jest.fn(),
   },
+<<<<<<< HEAD
   clubMember: {
     findFirst: jest.fn(),
   },
+=======
+>>>>>>> 2af7aee015e5c76afd60635538e5eba3c4bbbc1e
 };
 
 describe("UsersService", () => {
@@ -183,6 +186,7 @@ describe("UsersService", () => {
     });
   });
 
+<<<<<<< HEAD
   // ── updateUser (DB check mirrors) ──────────────────────────────────────────
   describe("updateUser - value validation", () => {
     it.each([
@@ -228,6 +232,8 @@ describe("UsersService", () => {
     });
   });
 
+=======
+>>>>>>> 2af7aee015e5c76afd60635538e5eba3c4bbbc1e
   // ── updateUser (umpire) ────────────────────────────────────────────────────
   describe("updateUser - umpire fields", () => {
     it("rejects umpire fields for non-umpire roles", async () => {
