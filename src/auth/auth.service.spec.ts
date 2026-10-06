@@ -77,18 +77,30 @@ describe("AuthService", () => {
       const result = await service.validateUser("ghost@hockey.com", "somepass");
 
       expect(result).toBeNull();
-      // bcrypt should NEVER be called — avoids timing side-channel on non-existent users
-      expect(mockBcrypt.compare).not.toHaveBeenCalled();
+      // bcrypt MUST run (against a dummy hash) — otherwise response time reveals unknown emails
+      expect(mockBcrypt.compare).toHaveBeenCalledTimes(1);
+    });
+
+    it("should normalize the email before lookup", async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await service.validateUser("  Player@Hockey.COM ", "somepass");
+
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { email: "player@hockey.com" },
+      });
     });
 
     it("should return null for OAuth users (password = null) — prevents bcrypt crash", async () => {
       // Critical: OAuth users have no password. Calling bcrypt.compare(pass, null) would throw.
       prisma.user.findUnique.mockResolvedValue({ ...mockUser, password: null });
+      // Even if the dummy compare "matched", an account without a password must not log in
+      (mockBcrypt.compare as jest.Mock).mockResolvedValue(true);
 
       const result = await service.validateUser("oauth@google.com", "anypass");
 
       expect(result).toBeNull();
-      expect(mockBcrypt.compare).not.toHaveBeenCalled();
+      expect(mockBcrypt.compare).not.toHaveBeenCalledWith("anypass", null);
     });
   });
 
@@ -158,10 +170,10 @@ describe("AuthService", () => {
     });
 
     it("should create new user when no account exists", async () => {
-      prisma.user.findFirst.mockResolvedValue(null);
-      prisma.user.findUnique
-        .mockResolvedValueOnce(null)  // email lookup → no existing account
-        .mockResolvedValueOnce(null); // username uniqueness check → "coach_franco" is free
+      prisma.user.findFirst
+        .mockResolvedValueOnce(null)  // socialId lookup → miss
+        .mockResolvedValueOnce(null); // username uniqueness check → "coach" is free
+      prisma.user.findUnique.mockResolvedValueOnce(null); // email lookup → no existing account
 
       const newUser = { id: "user-new", email: "coach@hockey.com", username: "coach" };
       prisma.user.create.mockResolvedValue(newUser);
@@ -182,12 +194,12 @@ describe("AuthService", () => {
     });
 
     it("should resolve username collision by appending counter", async () => {
-      prisma.user.findFirst.mockResolvedValue(null);
-      prisma.user.findUnique
-        .mockResolvedValueOnce(null)                   // email → no account
+      prisma.user.findFirst
+        .mockResolvedValueOnce(null)                   // socialId → miss
         .mockResolvedValueOnce({ id: "taken" })        // "coach" is taken
         .mockResolvedValueOnce({ id: "also-taken" })   // "coach1" is taken
         .mockResolvedValueOnce(null);                  // "coach2" is free
+      prisma.user.findUnique.mockResolvedValueOnce(null); // email → no account
 
       prisma.user.create.mockResolvedValue({ id: "new" });
 
@@ -195,6 +207,20 @@ describe("AuthService", () => {
 
       const createdData = prisma.user.create.mock.calls[0][0].data;
       expect(createdData.username).toBe("coach2");
+    });
+
+    it.each([
+      ["admin@gmail.com", "admin1"], // reserved name gets a suffix
+      ["juan.perez+hk@gmail.com", "juan_perez_hk"], // invalid chars sanitized
+      ["a@gmail.com", "usera"], // too short is padded
+    ])("should derive a valid username from %s", async (email, expected) => {
+      prisma.user.findFirst.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockResolvedValue({ id: "new" });
+
+      await service.oauthLogin({ ...googleProfile, email });
+
+      expect(prisma.user.create.mock.calls[0][0].data.username).toBe(expected);
     });
 
     it("should throw UnauthorizedException for new OAuth user without email", async () => {

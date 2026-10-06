@@ -56,6 +56,24 @@ export class UsersService {
     return this.prisma.user.findUnique({ where: { email } });
   }
 
+  /** `email` must already be normalized (lowercase, trimmed). */
+  async isEmailTaken(email: string): Promise<boolean> {
+    const found = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+    return !!found;
+  }
+
+  /** Case-insensitive so it also catches legacy mixed-case usernames. */
+  async isUsernameTaken(username: string): Promise<boolean> {
+    const found = await this.prisma.user.findFirst({
+      where: { username: { equals: username, mode: "insensitive" } },
+      select: { id: true },
+    });
+    return !!found;
+  }
+
   async findById(id: string) {
     return this.prisma.user.findUnique({ where: { id } });
   }

@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { NestFactory } from "@nestjs/core";
+import { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module";
 import { ValidationPipe } from "@nestjs/common";
 import * as bodyParser from "body-parser";
@@ -7,7 +8,16 @@ import cookieParser from "cookie-parser";
 import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Behind a reverse proxy / PaaS load balancer, req.ip is the proxy's IP unless
+  // Express is told to trust X-Forwarded-For. Without this, the per-IP throttler
+  // would treat ALL users as one client. TRUST_PROXY = number of proxy hops
+  // (usually 1). Leave unset when exposed directly (local dev).
+  const trustProxyHops = Number(process.env.TRUST_PROXY);
+  if (Number.isInteger(trustProxyHops) && trustProxyHops > 0) {
+    app.set("trust proxy", trustProxyHops);
+  }
 
   // Global Exception Filter (Logger & Sanitizer)
   app.useGlobalFilters(new AllExceptionsFilter());
@@ -37,7 +47,8 @@ async function bootstrap() {
       transform: true, // Transforma los payloads a los tipos del DTO
     }),
   );
-  await app.listen(4000);
-  console.log("Server running on http://localhost:4000/graphql");
+  const port = Number(process.env.PORT) || 4000;
+  await app.listen(port);
+  console.log(`Server running on http://localhost:${port}/graphql`);
 }
 bootstrap();

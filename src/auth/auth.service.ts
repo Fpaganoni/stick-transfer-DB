@@ -4,6 +4,15 @@ import { PrismaService } from "../prisma.service";
 import * as bcrypt from "bcrypt";
 import { Response } from "express";
 import { AUTH_COOKIE_NAME, authCookieOptions, expiresInToMs } from "./auth.constants";
+import {
+  isReservedUsername,
+  normalizeEmail,
+  usernameBaseFromEmail,
+} from "../users/validation/credentials";
+
+/** Valid cost-10 bcrypt hash of a throwaway string; compared when no real hash exists (timing equalization). */
+const DUMMY_PASSWORD_HASH =
+  "$2b$10$.c5VQyMPg.0lkdoQPUHHBeNA5pB9MhgfkM38EnEbnzJki6C1k/Jby";
 
 /**
  * AuthService — handles all authentication logic:
@@ -26,13 +35,17 @@ export class AuthService {
    * Validates an email/password pair.
    * Returns the user if credentials match, or null if not.
    * SECURITY: Returns null (not throws) to avoid leaking whether email exists.
+   * A bcrypt compare always runs (against a dummy hash when there is no usable
+   * password) so response time does not reveal whether the email exists.
    */
   async validateUser(email: string, pass: string) {
-    const user = await this.prisma.user.findUnique({ where: { email } });
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalizeEmail(email) },
+    });
     // Guard: OAuth users have no password — reject plaintext login attempts.
-    if (!user || !user.password) return null;
-    const match = await bcrypt.compare(pass, user.password);
-    if (match) return user;
+    const hash = user?.password ?? DUMMY_PASSWORD_HASH;
+    const match = await bcrypt.compare(pass ?? "", hash);
+    if (match && user?.password) return user;
     return null;
   }
 
@@ -118,10 +131,9 @@ export class AuthService {
     if (user) return this.login(user);
 
     // Step 2: Look up by email to link existing email/password account
-    if (profile.email) {
-      user = await this.prisma.user.findUnique({
-        where: { email: profile.email },
-      });
+    const email = profile.email ? normalizeEmail(profile.email) : undefined;
+    if (email) {
+      user = await this.prisma.user.findUnique({ where: { email } });
 
       if (user) {
         // Link OAuth provider to existing account
@@ -137,25 +149,32 @@ export class AuthService {
     }
 
     // Step 3: No existing user — require email to register
-    if (!profile.email) {
+    if (!email) {
       throw new UnauthorizedException(
         "Unable to authenticate: email is required to create a new account. " +
           "Please ensure you share your email when signing in.",
       );
     }
 
-    // Generate a unique username from the email prefix
-    const baseUsername = profile.email.split("@")[0];
+    // Generate a valid, unique username from the email prefix
+    // (sanitized to the register rules; reserved names get a numeric suffix).
+    const baseUsername = usernameBaseFromEmail(email);
     let username = baseUsername;
     let counter = 1;
-    while (await this.prisma.user.findUnique({ where: { username } })) {
+    while (
+      isReservedUsername(username) ||
+      (await this.prisma.user.findFirst({
+        where: { username: { equals: username, mode: "insensitive" } },
+        select: { id: true },
+      }))
+    ) {
       username = `${baseUsername}${counter}`;
       counter++;
     }
 
     user = await this.prisma.user.create({
       data: {
-        email: profile.email,
+        email,
         username,
         name: profile.displayName || username,
         password: null, // OAuth users never have a password

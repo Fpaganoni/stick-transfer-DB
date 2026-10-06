@@ -9,7 +9,6 @@ import {
   ID,
 } from "@nestjs/graphql";
 import {
-  BadRequestException,
   ForbiddenException,
   UnauthorizedException,
   UseGuards,
@@ -21,6 +20,17 @@ import { PrismaService } from "../prisma.service";
 import { ClubsService } from "../clubs/clubs.service";
 import { SocialService } from "../social/social.service";
 import { GqlAuthGuard } from "../auth/gql-auth.guard";
+import { Throttle } from "@nestjs/throttler";
+import { AppError, FieldError } from "../common/errors/app.error";
+import { mapUniqueViolation } from "../common/errors/unique-violation";
+import {
+  checkEmail,
+  checkUsername,
+  normalizeEmail,
+  normalizeUsername,
+  validateRegisterCredentials,
+  validateUsernameOrThrow,
+} from "./validation/credentials";
 
 /**
  * Marks a user object as the caller's own profile when the session cookie was
@@ -61,13 +71,32 @@ export class UsersResolver {
     return user;
   }
 
+  @Query(() => Boolean)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async isEmailAvailable(@Args("email") email: string) {
+    const normalized = normalizeEmail(email);
+    const invalid = checkEmail(normalized);
+    if (invalid) throw AppError.validation([invalid]);
+    return !(await this.usersService.isEmailTaken(normalized));
+  }
+
+  @Query(() => Boolean)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async isUsernameAvailable(@Args("username") username: string) {
+    const normalized = normalizeUsername(username) ?? "";
+    const invalid = checkUsername(normalized);
+    if (invalid) throw AppError.validation([invalid]);
+    return !(await this.usersService.isUsernameTaken(normalized));
+  }
+
   @Mutation(() => Object)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async register(
     @Context() context: any,
-    @Args("email") email: string,
-    @Args("name") name: string,
-    @Args("username", { nullable: true }) username?: string,
-    @Args("password") password?: string,
+    @Args("email") rawEmail: string,
+    @Args("name") rawName: string,
+    @Args("username", { nullable: true }) rawUsername?: string,
+    @Args("password") rawPassword?: string,
     @Args("role", { nullable: true }) role?: string,
     @Args("country", { nullable: true }) country?: string,
     @Args("city", { nullable: true }) city?: string,
@@ -77,34 +106,55 @@ export class UsersResolver {
     @Args("managedByFirstName", { nullable: true }) managedByFirstName?: string,
     @Args("managedByLastName", { nullable: true }) managedByLastName?: string,
   ) {
+    // Normalizes (trim/lowercase) and validates email, name, username, password.
+    const { email, name, username, password } = validateRegisterCredentials({
+      email: rawEmail,
+      name: rawName,
+      username: rawUsername,
+      password: rawPassword,
+    });
+
+    // Normalize role to uppercase for case-insensitive validation
+    const normalizedRole = role?.toUpperCase();
+
+    const roleErrors: FieldError[] = [];
+    // SUPERADMIN cannot self-register
+    if (
+      normalizedRole &&
+      !["PLAYER", "COACH", "CLUB", "UMPIRE"].includes(normalizedRole)
+    ) {
+      roleErrors.push({
+        field: "role",
+        code: "ROLE_INVALID",
+        message: "Invalid role. Allowed roles: PLAYER, COACH, CLUB, UMPIRE",
+      });
+    }
+    if (normalizedRole === "CLUB") {
+      const required: [string, unknown][] = [
+        ["clubName", clubName],
+        ["country", country],
+        ["city", city],
+        ["managedByFirstName", managedByFirstName],
+        ["managedByLastName", managedByLastName],
+      ];
+      for (const [field, value] of required) {
+        if (!value) {
+          roleErrors.push({
+            field,
+            code: "FIELD_REQUIRED",
+            message: `${field} is required when registering as a CLUB`,
+          });
+        }
+      }
+    }
+    if (roleErrors.length) throw AppError.validation(roleErrors);
+
+    if (await this.usersService.isEmailTaken(email)) throw AppError.emailTaken();
+    if (username && (await this.usersService.isUsernameTaken(username))) {
+      throw AppError.usernameTaken();
+    }
+
     try {
-      // Normalize role to uppercase for case-insensitive validation
-      const normalizedRole = role?.toUpperCase();
-
-      // Validate role if provided — SUPERADMIN cannot self-register
-      if (
-        normalizedRole &&
-        !["PLAYER", "COACH", "CLUB", "UMPIRE"].includes(normalizedRole)
-      ) {
-        throw new BadRequestException(
-          "Invalid role. Allowed roles: PLAYER, COACH, CLUB, UMPIRE",
-        );
-      }
-
-      if (normalizedRole === "CLUB") {
-        if (!clubName) {
-          throw new BadRequestException("clubName is required when registering as a CLUB");
-        }
-        if (!country || !city) {
-          throw new BadRequestException("country and city are required when registering as a CLUB");
-        }
-        if (!managedByFirstName || !managedByLastName) {
-          throw new BadRequestException(
-            "managedByFirstName and managedByLastName are required when registering as a CLUB",
-          );
-        }
-      }
-
       const user = await this.usersService.createUser({
         email,
         name,
@@ -132,21 +182,20 @@ export class UsersResolver {
       this.authService.setAuthCookie(context.res, token.access_token);
       return { ...user, [SELF_VIEW]: true };
     } catch (error) {
-      if (error.code === "P2002") {
-        throw new BadRequestException(`${error.meta.target[0]} already exists`);
-      }
-      throw error;
+      // Race: another request took the email/username after our pre-check.
+      throw mapUniqueViolation(error) ?? error;
     }
   }
 
   @Mutation(() => Object)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async login(
     @Context() context: any,
     @Args("email") email: string,
     @Args("password") password: string,
   ) {
     const user = await this.authService.validateUser(email, password);
-    if (!user) throw new Error("Invalid credentials");
+    if (!user) throw AppError.invalidCredentials();
     const t = await this.authService.login(user);
     this.authService.setAuthCookie(context.res, t.access_token);
     return { ...user, [SELF_VIEW]: true };
@@ -278,7 +327,7 @@ export class UsersResolver {
     @Context() context: any,
     @Args("id") id: string,
     @Args("name", { nullable: true }) name?: string,
-    @Args("username", { nullable: true }) username?: string,
+    @Args("username", { nullable: true }) rawUsername?: string,
     @Args("bio", { nullable: true }) bio?: string,
     @Args("avatar", { nullable: true }) avatar?: string,
     @Args("coverImage", { nullable: true }) coverImage?: string,
@@ -311,6 +360,7 @@ export class UsersResolver {
     umpireCertifications?: any[],
   ) {
     const currentUser = this.requireSelfOrAdmin(context, id);
+    const username = validateUsernameOrThrow(rawUsername);
 
     // Joining a club requires an accepted invitation; only admins can force it.
     if (clubId && currentUser.role !== "SUPERADMIN") {
@@ -347,10 +397,7 @@ export class UsersResolver {
         umpireCertifications,
       });
     } catch (error) {
-      if (error.code === "P2002") {
-        throw new BadRequestException(`${error.meta.target[0]} already exists`);
-      }
-      throw error;
+      throw mapUniqueViolation(error) ?? error;
     }
   }
 

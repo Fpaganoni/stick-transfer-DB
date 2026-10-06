@@ -459,6 +459,10 @@ type Query {
   user(id: ID!): User
   getUserByUsername(username: String!): User
   me: User
+  """Public, rate limited (10/min). Normalizes input; errors with VALIDATION_ERROR if the format is invalid."""
+  isEmailAvailable(email: String!): Boolean!
+  """Public, rate limited (10/min). Case-insensitive."""
+  isUsernameAvailable(username: String!): Boolean!
   players: [User!]!
   coaches: [User!]!
   umpires: [User!]!
