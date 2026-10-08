@@ -8,6 +8,7 @@ describe("UsersResolver - authorization", () => {
   let cloudinary: any;
 
   const ctx = {};
+  const IMG = "data:image/png;base64,AAAA";
 
   beforeEach(() => {
     usersService = {
@@ -140,8 +141,8 @@ describe("UsersResolver - authorization", () => {
 
   describe("media mutations", () => {
     it.each([
-      ["uploadAvatar", () => resolver.uploadAvatar(ctx, "u1", "data")],
-      ["uploadCoverImage", () => resolver.uploadCoverImage(ctx, "u1", "data")],
+      ["uploadAvatar", () => resolver.uploadAvatar(ctx, "u1", IMG)],
+      ["uploadCoverImage", () => resolver.uploadCoverImage(ctx, "u1", IMG)],
       [
         "uploadCV",
         () => resolver.uploadCV(ctx, "u1", "data:application/pdf;base64,AA"),
@@ -157,9 +158,20 @@ describe("UsersResolver - authorization", () => {
 
     it("uploadAvatar works for the owner", async () => {
       asUser("u1");
-      await expect(resolver.uploadAvatar(ctx, "u1", "data")).resolves.toBe(true);
+      await expect(resolver.uploadAvatar(ctx, "u1", IMG)).resolves.toBe(true);
       expect(usersService.setAvatar).toHaveBeenCalledWith("u1", "https://img");
     });
+
+    it.each(["uploadAvatar", "uploadCoverImage"] as const)(
+      "%s rejects non-image base64 before uploading",
+      async (method) => {
+        asUser("u1");
+        await expect(resolver[method](ctx, "u1", "data")).rejects.toMatchObject({
+          fields: [expect.objectContaining({ code: "IMAGE_FORMAT_INVALID" })],
+        });
+        expect(cloudinary.uploadBase64).not.toHaveBeenCalled();
+      },
+    );
 
     it("deleteCV works for the owner", async () => {
       asUser("u1");

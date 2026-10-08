@@ -5,6 +5,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
 import * as bcrypt from "bcrypt";
+import { resolveOwnedImages } from "../uploads/image-url";
 
 @Injectable()
 export class UsersService {
@@ -133,8 +134,8 @@ export class UsersService {
     data: {
       name?: string;
       bio?: string;
-      avatar?: string;
-      coverImage?: string;
+      avatar?: string | null;
+      coverImage?: string | null;
       coverImagePosition?: string;
       position?: string;
       country?: string;
@@ -190,6 +191,12 @@ export class UsersService {
       }
     }
 
+    const images = await this.validatedImages(
+      id,
+      userUpdateData.avatar,
+      userUpdateData.coverImage,
+    );
+
     const hasUmpireData = [
       licenseLevel,
       certifyingBody,
@@ -235,6 +242,7 @@ export class UsersService {
       where: { id },
       data: {
         ...userUpdateData,
+        ...images,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
         level: level as any,
         licenseLevel: licenseLevel as any,
@@ -284,5 +292,27 @@ export class UsersService {
     }
 
     return updatedUser;
+  }
+
+  /** Checks avatar/coverImage against the user's folder and the stored values. */
+  private async validatedImages(
+    userId: string,
+    avatar: string | null | undefined,
+    coverImage: string | null | undefined,
+  ) {
+    if (avatar === undefined && coverImage === undefined) return {};
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { avatar: true, coverImage: true },
+    });
+    if (!user) throw new BadRequestException("User not found");
+
+    return resolveOwnedImages({
+      kind: "users",
+      ownerId: userId,
+      input: { avatar, coverImage },
+      current: user,
+    });
   }
 }

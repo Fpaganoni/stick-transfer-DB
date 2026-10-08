@@ -297,6 +297,32 @@ type S3PresignedUrl {
   finalUrl: String!
 }
 
+enum ImageUploadTarget {
+  USER_AVATAR
+  USER_COVER
+  CLUB_LOGO
+  CLUB_COVER
+}
+
+"""
+Everything the browser needs to upload one image straight to Cloudinary.
+Send as multipart POST to uploadUrl EXACTLY these fields: file, api_key,
+timestamp, signature, public_id (= publicId below, the full path),
+overwrite=true, invalidate=true and allowed_formats=jpg,png,webp. Do NOT send
+folder: it is informational only and not part of the signature. Any extra or
+different parameter makes Cloudinary reject the signature. Then save the
+secure_url it returns via updateUser / updateClub.
+"""
+type ImageUploadSignature {
+  cloudName: String!
+  apiKey: String!
+  timestamp: Int!
+  signature: String!
+  folder: String!
+  publicId: String!
+  uploadUrl: String!
+}
+
 enum UserLevel {
   PROFESSIONAL
   AMATEUR
@@ -559,7 +585,9 @@ type Mutation {
   login(email: String!, password: String!): User!
   logout: Boolean!
   uploadAvatar(userId: ID!, base64: String!): Boolean!
+    @deprecated(reason: "Use createImageUploadSignature(target: USER_AVATAR) and upload straight to Cloudinary")
   uploadCoverImage(userId: ID!, base64: String!): Boolean!
+    @deprecated(reason: "Use createImageUploadSignature(target: USER_COVER) and upload straight to Cloudinary")
   uploadCV(userId: ID!, base64: String!): String!
   deleteCV(userId: ID!): Boolean!
   updateUser(
@@ -594,6 +622,17 @@ type Mutation {
 
   # Uploads
   getS3PresignedUrl(fileName: String!, contentType: String!): S3PresignedUrl!
+  """
+  Signs a direct browser -> Cloudinary image upload into the caller's own
+  folder. Requires a session. USER_* signs stick-transfer/users/{userId}.
+  CLUB_* is only for the club itself (role CLUB) or a super admin; the super
+  admin must pass clubId, which a club may omit (it must equal its own id).
+  Rate limited to 20 per minute.
+  """
+  createImageUploadSignature(
+    target: ImageUploadTarget!
+    clubId: ID
+  ): ImageUploadSignature!
 
   # Clubs
   """Creates the club profile for the authenticated user (must have role CLUB)."""
@@ -645,10 +684,18 @@ type Mutation {
     tiktok: String
     benefits: [String!]
     videos: [String!]
+    """Only urls uploaded to this club's folder, the current value, or null/"" to remove."""
+    logo: String
+    """Only urls uploaded to this club's folder, the current value, or null/"" to remove."""
+    coverImage: String
+    city: String
+    country: String
   ): Club!
   requestClubVerification(clubId: ID!, documentUrl: String!): Club!
   uploadClubLogo(clubId: ID!, base64: String!): Boolean!
+    @deprecated(reason: "Use createImageUploadSignature(target: CLUB_LOGO) and upload straight to Cloudinary")
   uploadClubCoverImage(clubId: ID!, base64: String!): Boolean!
+    @deprecated(reason: "Use createImageUploadSignature(target: CLUB_COVER) and upload straight to Cloudinary")
 
   # Job Opportunities
   createJobOpportunity(

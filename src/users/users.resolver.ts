@@ -16,6 +16,7 @@ import {
 import { UsersService } from "./users.service";
 import { AuthService } from "../auth/auth.service";
 import { CloudinaryService } from "../uploads/cloudinary.service";
+import { assertImageDataUrl } from "../uploads/image-url";
 import { PrismaService } from "../prisma.service";
 import { ClubsService } from "../clubs/clubs.service";
 import { SocialService } from "../social/social.service";
@@ -214,8 +215,8 @@ export class UsersResolver {
     @Args("base64") base64: string,
   ) {
     this.requireSelfOrAdmin(context, userId);
+    assertImageDataUrl("avatar", base64);
     try {
-      // accepts a data-url or base64 string
       const res = await this.cloudinary.uploadBase64(base64, "avatars");
       await this.usersService.setAvatar(userId, res.secure_url || res.url);
       return true;
@@ -231,8 +232,8 @@ export class UsersResolver {
     @Args("base64") base64: string,
   ) {
     this.requireSelfOrAdmin(context, userId);
+    assertImageDataUrl("coverImage", base64);
     try {
-      // accepts a data-url or base64 string
       const res = await this.cloudinary.uploadBase64(base64, "covers");
       await this.usersService.setCoverImage(userId, res.secure_url || res.url);
       return true;
@@ -329,8 +330,8 @@ export class UsersResolver {
     @Args("name", { nullable: true }) name?: string,
     @Args("username", { nullable: true }) rawUsername?: string,
     @Args("bio", { nullable: true }) bio?: string,
-    @Args("avatar", { nullable: true }) avatar?: string,
-    @Args("coverImage", { nullable: true }) coverImage?: string,
+    @Args("avatar", { nullable: true }) avatar?: string | null,
+    @Args("coverImage", { nullable: true }) coverImage?: string | null,
     @Args("coverImagePosition", { nullable: true }) coverImagePosition?: string,
     @Args("position", { nullable: true }) position?: string,
     @Args("country", { nullable: true }) country?: string,

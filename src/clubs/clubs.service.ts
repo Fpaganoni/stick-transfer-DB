@@ -7,6 +7,7 @@ import {
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { NotificationType, VerificationStatus } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
+import { resolveOwnedImages } from "../uploads/image-url";
 
 @Injectable()
 export class ClubsService {
@@ -271,6 +272,10 @@ export class ClubsService {
       facebook?: string;
       tiktok?: string;
       benefits?: string[];
+      logo?: string | null;
+      coverImage?: string | null;
+      city?: string | null;
+      country?: string | null;
     },
   ) {
     if (
@@ -280,10 +285,46 @@ export class ClubsService {
       throw new BadRequestException("foundedYear must be between 1800 and 2100");
     }
 
+    // city and country are required columns: null means "unchanged", blank is an error
+    const { city, country, logo, coverImage, ...rest } = data;
+    for (const [name, value] of [["city", city], ["country", country]] as const) {
+      if (value != null && !value.trim()) {
+        throw new BadRequestException(`${name} cannot be empty`);
+      }
+    }
+
+    const images = await this.validatedImages(id, { logo, coverImage });
+
     return this.prisma.club.update({
       where: { id },
-      data,
+      data: {
+        ...rest,
+        ...images,
+        ...(city != null && { city: city.trim() }),
+        ...(country != null && { country: country.trim() }),
+      },
       include: { user: true },
+    });
+  }
+
+  /** Checks logo/coverImage against the club's folder and the stored values. */
+  private async validatedImages(
+    clubId: string,
+    input: { logo?: string | null; coverImage?: string | null },
+  ) {
+    if (input.logo === undefined && input.coverImage === undefined) return {};
+
+    const club = await this.prisma.club.findUnique({
+      where: { id: clubId },
+      select: { logo: true, coverImage: true },
+    });
+    if (!club) throw new NotFoundException(`Club ${clubId} not found`);
+
+    return resolveOwnedImages({
+      kind: "clubs",
+      ownerId: clubId,
+      input,
+      current: club,
     });
   }
 

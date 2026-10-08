@@ -247,6 +247,101 @@ describe("ClubsService", () => {
     });
   });
 
+  describe("updateClub - images and location", () => {
+    const originalUrl = process.env.CLOUDINARY_URL;
+    const OWN_LOGO =
+      "https://res.cloudinary.com/demo/image/upload/v1/stick-transfer/clubs/club-1/logo.png";
+    const LEGACY_COVER = "https://images.unsplash.com/photo-1";
+
+    beforeEach(() => {
+      process.env.CLOUDINARY_URL = "cloudinary://k:s@demo";
+      prisma.club.findUnique.mockResolvedValue({ logo: null, coverImage: LEGACY_COVER });
+      prisma.club.update.mockResolvedValue({ id: "club-1" });
+    });
+
+    afterEach(() => {
+      if (originalUrl === undefined) delete process.env.CLOUDINARY_URL;
+      else process.env.CLOUDINARY_URL = originalUrl;
+    });
+
+    const updatedData = () => prisma.club.update.mock.calls[0][0].data;
+
+    it("saves a logo uploaded to the club's own folder", async () => {
+      await service.updateClub("club-1", { logo: OWN_LOGO });
+      expect(updatedData()).toEqual(expect.objectContaining({ logo: OWN_LOGO }));
+    });
+
+    it("rejects a logo from a foreign host with IMAGE_URL_INVALID", async () => {
+      await expect(
+        service.updateClub("club-1", { logo: "https://evil.com/x.png" }),
+      ).rejects.toMatchObject({
+        fields: [expect.objectContaining({ field: "logo", code: "IMAGE_URL_INVALID" })],
+      });
+      expect(prisma.club.update).not.toHaveBeenCalled();
+    });
+
+    it("rejects a logo from another club's folder", async () => {
+      const other = OWN_LOGO.replace("club-1", "club-2");
+      await expect(service.updateClub("club-1", { logo: other })).rejects.toMatchObject({
+        fields: [expect.objectContaining({ code: "IMAGE_URL_INVALID" })],
+      });
+    });
+
+    it("accepts the stored legacy coverImage resent by the form", async () => {
+      await service.updateClub("club-1", { coverImage: LEGACY_COVER });
+      expect(updatedData()).toEqual(expect.objectContaining({ coverImage: LEGACY_COVER }));
+    });
+
+    it("rejects a new coverImage that is not in the club's folder", async () => {
+      await expect(
+        service.updateClub("club-1", { coverImage: "https://images.unsplash.com/photo-2" }),
+      ).rejects.toMatchObject({
+        fields: [expect.objectContaining({ field: "coverImage" })],
+      });
+    });
+
+    it("removes the image when logo is an empty string", async () => {
+      await service.updateClub("club-1", { logo: "" });
+      expect(updatedData()).toEqual(expect.objectContaining({ logo: null }));
+    });
+
+    it("does not read the club when no image is sent", async () => {
+      await service.updateClub("club-1", { name: "New" });
+      expect(prisma.club.findUnique).not.toHaveBeenCalled();
+    });
+
+    it("fails with NotFound when the club does not exist", async () => {
+      prisma.club.findUnique.mockResolvedValue(null);
+      await expect(service.updateClub("club-1", { logo: OWN_LOGO })).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it("saves city and country", async () => {
+      await service.updateClub("club-1", { city: "Madrid", country: "Spain" });
+      expect(updatedData()).toEqual(
+        expect.objectContaining({ city: "Madrid", country: "Spain" }),
+      );
+    });
+
+    it.each(["", "   "])("rejects a blank city %p with 400", async (city) => {
+      await expect(service.updateClub("club-1", { city })).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(prisma.club.update).not.toHaveBeenCalled();
+    });
+
+    it("ignores null city/country instead of nulling required columns", async () => {
+      await service.updateClub("club-1", {
+        name: "New",
+        city: null as any,
+        country: null as any,
+      });
+      expect(updatedData()).not.toHaveProperty("city");
+      expect(updatedData()).not.toHaveProperty("country");
+    });
+  });
+
   // ── acceptMembership ──────────────────────────────────────────────────────
   describe("acceptMembership", () => {
     it("should update membership status to ACTIVE for the invited user", async () => {

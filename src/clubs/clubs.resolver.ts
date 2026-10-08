@@ -3,6 +3,7 @@ import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { ClubsService } from "./clubs.service";
 import { NotificationsGateway } from "../notifications/notifications.gateway";
 import { CloudinaryService } from "../uploads/cloudinary.service";
+import { assertImageDataUrl } from "../uploads/image-url";
 import { AuthService } from "../auth/auth.service";
 import { SocialService } from "../social/social.service";
 
@@ -127,11 +128,16 @@ export class ClubsResolver {
     @Args("facebook", { nullable: true }) facebook?: string,
     @Args("tiktok", { nullable: true }) tiktok?: string,
     @Args("benefits", { type: () => [String], nullable: true }) benefits?: string[],
+    @Args("logo", { nullable: true }) logo?: string | null,
+    @Args("coverImage", { nullable: true }) coverImage?: string | null,
+    @Args("city", { nullable: true }) city?: string | null,
+    @Args("country", { nullable: true }) country?: string | null,
   ) {
     this.requireClubOwnerOrAdmin(context, id);
     return this.clubsService.updateClub(id, {
       name, managedByFirstName, managedByLastName, description, bio, coverImagePosition, league, foundedYear,
       email, phone, website, instagram, twitter, facebook, tiktok, benefits,
+      logo, coverImage, city, country,
     });
   }
 
@@ -182,6 +188,7 @@ export class ClubsResolver {
     @Args("base64") base64: string,
   ) {
     this.requireClubOwnerOrAdmin(context, clubId);
+    assertImageDataUrl("logo", base64);
     try {
       const res = await this.cloudinary.uploadBase64(base64, "club_logos");
       await this.clubsService.setLogo(clubId, res.secure_url || res.url);
@@ -198,6 +205,7 @@ export class ClubsResolver {
     @Args("base64") base64: string,
   ) {
     this.requireClubOwnerOrAdmin(context, clubId);
+    assertImageDataUrl("coverImage", base64);
     try {
       const res = await this.cloudinary.uploadBase64(base64, "club_covers");
       await this.clubsService.setCoverImage(clubId, res.secure_url || res.url);

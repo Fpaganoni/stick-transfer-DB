@@ -323,4 +323,61 @@ describe("UsersService", () => {
       expect(prisma.trajectory.createMany).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe("updateUser - profile images", () => {
+    const originalUrl = process.env.CLOUDINARY_URL;
+    const OWN_AVATAR =
+      "https://res.cloudinary.com/demo/image/upload/v1/stick-transfer/users/user-1/avatar.webp";
+    const LEGACY_AVATAR = "https://randomuser.me/api/portraits/men/1.jpg";
+
+    beforeEach(() => {
+      process.env.CLOUDINARY_URL = "cloudinary://k:s@demo";
+      prisma.user.findUnique.mockResolvedValue({ avatar: LEGACY_AVATAR, coverImage: null });
+      prisma.user.update.mockResolvedValue({ id: "user-1" });
+    });
+
+    afterEach(() => {
+      if (originalUrl === undefined) delete process.env.CLOUDINARY_URL;
+      else process.env.CLOUDINARY_URL = originalUrl;
+    });
+
+    const updatedData = () => prisma.user.update.mock.calls[0][0].data;
+
+    it("rejects an avatar from a foreign host with IMAGE_URL_INVALID", async () => {
+      await expect(
+        service.updateUser("user-1", { avatar: "https://evil.com/x.png" }),
+      ).rejects.toMatchObject({
+        fields: [expect.objectContaining({ field: "avatar", code: "IMAGE_URL_INVALID" })],
+      });
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it("rejects a coverImage from another user's folder", async () => {
+      const other = OWN_AVATAR.replace("user-1", "user-2");
+      await expect(service.updateUser("user-1", { coverImage: other })).rejects.toMatchObject({
+        fields: [expect.objectContaining({ field: "coverImage", code: "IMAGE_URL_INVALID" })],
+      });
+    });
+
+    it("saves an avatar uploaded to the user's own folder", async () => {
+      await service.updateUser("user-1", { avatar: OWN_AVATAR });
+      expect(updatedData()).toEqual(expect.objectContaining({ avatar: OWN_AVATAR }));
+    });
+
+    it("accepts the stored legacy avatar resent by the form", async () => {
+      await service.updateUser("user-1", { avatar: LEGACY_AVATAR });
+      expect(updatedData()).toEqual(expect.objectContaining({ avatar: LEGACY_AVATAR }));
+    });
+
+    it("removes the avatar when it is an empty string", async () => {
+      await service.updateUser("user-1", { avatar: "" });
+      expect(updatedData()).toEqual(expect.objectContaining({ avatar: null }));
+    });
+
+    it("does not read the user when no image is sent", async () => {
+      await service.updateUser("user-1", { bio: "x" });
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(updatedData()).not.toHaveProperty("avatar");
+    });
+  });
 });

@@ -11,6 +11,7 @@ describe("ClubsResolver - authorization", () => {
 
   const asUser = (userId: string, role = "CLUB") =>
     authService.getUserFromRequest.mockReturnValue({ userId, role });
+  const IMG = "data:image/png;base64,AAAA";
 
   beforeEach(() => {
     clubsService = {
@@ -38,8 +39,8 @@ describe("ClubsResolver - authorization", () => {
   describe("club-scoped mutations", () => {
     const calls: [string, () => Promise<any> | any][] = [
       ["updateClub", () => (resolver as any).updateClub(ctx, "club-1", "New name")],
-      ["uploadClubLogo", () => resolver.uploadClubLogo(ctx, "club-1", "data")],
-      ["uploadClubCoverImage", () => resolver.uploadClubCoverImage(ctx, "club-1", "data")],
+      ["uploadClubLogo", () => resolver.uploadClubLogo(ctx, "club-1", IMG)],
+      ["uploadClubCoverImage", () => resolver.uploadClubCoverImage(ctx, "club-1", IMG)],
       ["requestClubVerification", () => (resolver as any).requestClubVerification(ctx, "club-1", "https://doc")],
       ["invitePlayerToClub", () => (resolver as any).invitePlayerToClub(ctx, "club-1", "player-1")],
     ];
@@ -67,9 +68,37 @@ describe("ClubsResolver - authorization", () => {
       asUser("club-1");
       await (resolver as any).updateClub(ctx, "club-1", "New name");
       expect(clubsService.updateClub).toHaveBeenCalled();
-      await resolver.uploadClubLogo(ctx, "club-1", "data");
+      await resolver.uploadClubLogo(ctx, "club-1", IMG);
       expect(clubsService.setLogo).toHaveBeenCalledWith("club-1", "https://img");
     });
+
+    it("passes logo, coverImage, city and country through to the service", async () => {
+      asUser("club-1");
+      const args: any[] = new Array(16).fill(undefined);
+      await (resolver as any).updateClub(
+        ctx, "club-1", ...args, "https://logo", "https://cover", "Madrid", "Spain",
+      );
+      expect(clubsService.updateClub).toHaveBeenCalledWith(
+        "club-1",
+        expect.objectContaining({
+          logo: "https://logo",
+          coverImage: "https://cover",
+          city: "Madrid",
+          country: "Spain",
+        }),
+      );
+    });
+
+    it.each(["uploadClubLogo", "uploadClubCoverImage"] as const)(
+      "%s rejects non-image base64 before uploading",
+      async (method) => {
+        asUser("club-1");
+        await expect(resolver[method](ctx, "club-1", "data")).rejects.toMatchObject({
+          fields: [expect.objectContaining({ code: "IMAGE_FORMAT_INVALID" })],
+        });
+        expect(cloudinary.uploadBase64).not.toHaveBeenCalled();
+      },
+    );
 
     it("allows a super admin", async () => {
       asUser("admin", "SUPERADMIN");
