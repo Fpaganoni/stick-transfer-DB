@@ -591,7 +591,12 @@ type Mutation {
     role: String
     country: String
     city: String
+    # Only PLAYER stores a position: goalkeeper | defender | midfielder | attacker
+    # (otherwise 400 VALIDATION_ERROR, field position, code POSITION_INVALID).
+    # For any other role it is ignored and stored as null.
     position: String
+    # Strict YYYY-MM-DD (UTC), between 16 and 100 years old as of today. Errors:
+    # DATE_OF_BIRTH_INVALID | DATE_OF_BIRTH_TOO_YOUNG | DATE_OF_BIRTH_TOO_OLD
     dateOfBirth: String
     clubName: String
     managedByFirstName: String
@@ -613,6 +618,9 @@ type Mutation {
     avatar: String
     coverImage: String
     coverImagePosition: String
+    # Judged by the user's stored role: only PLAYER keeps a position
+    # (goalkeeper | defender | midfielder | attacker, else POSITION_INVALID);
+    # for any other role it is ignored and stored as null.
     position: String
     country: String
     city: String
@@ -620,6 +628,7 @@ type Mutation {
     yearsOfExperience: Int
     multimedia: [String!]
     cvUrl: String
+    # Strict YYYY-MM-DD (UTC), 16 to 100 years old. Same codes as register.
     dateOfBirth: String
     level: UserLevel
     trajectories: [TrajectoryInput!]

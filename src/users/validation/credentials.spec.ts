@@ -1,10 +1,15 @@
 import { AppError } from "../../common/errors/app.error";
 import {
+  checkDateOfBirth,
   checkEmail,
   checkPassword,
+  checkRegisterCredentials,
   checkUsername,
+  MAX_AGE,
+  MIN_AGE,
   normalizeEmail,
   normalizeUsername,
+  resolvePosition,
   validateRegisterCredentials,
 } from "./credentials";
 
@@ -63,6 +68,116 @@ describe("credentials validation", () => {
     });
     it("rejects reserved names", () => {
       expect(checkUsername("admin")?.code).toBe("USERNAME_RESERVED");
+    });
+  });
+
+  describe("dateOfBirth", () => {
+    // Frozen clock: "today" is 2026-10-09 (UTC).
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date("2026-10-09T12:00:00Z"));
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it("exposes the age limits", () => {
+      expect(MIN_AGE).toBe(16);
+      expect(MAX_AGE).toBe(100);
+    });
+    it("undefined and null are allowed (optional)", () => {
+      expect(checkDateOfBirth(undefined)).toBeNull();
+      expect(checkDateOfBirth(null as unknown as undefined)).toBeNull();
+    });
+    it("accepts a valid adult date", () => {
+      expect(checkDateOfBirth("1995-03-15")).toBeNull();
+    });
+    it("accepts exactly 16 years old today", () => {
+      expect(checkDateOfBirth("2010-10-09")).toBeNull();
+    });
+    it("rejects 16 years old tomorrow as too young", () => {
+      expect(checkDateOfBirth("2010-10-10")?.code).toBe("DATE_OF_BIRTH_TOO_YOUNG");
+    });
+    it("rejects 15 years old as too young", () => {
+      const err = checkDateOfBirth("2011-10-09");
+      expect(err).toMatchObject({ field: "dateOfBirth", code: "DATE_OF_BIRTH_TOO_YOUNG" });
+    });
+    it("rejects a future date as too young", () => {
+      expect(checkDateOfBirth("2030-01-01")?.code).toBe("DATE_OF_BIRTH_TOO_YOUNG");
+    });
+    it("accepts exactly 100 years old today", () => {
+      expect(checkDateOfBirth("1926-10-09")).toBeNull();
+    });
+    it("rejects older than 100 as too old", () => {
+      expect(checkDateOfBirth("1926-10-08")?.code).toBe("DATE_OF_BIRTH_TOO_OLD");
+      expect(checkDateOfBirth("1800-01-01")?.code).toBe("DATE_OF_BIRTH_TOO_OLD");
+    });
+    it.each(["2001-02-30", "2001-13-01", "2001-00-10", "2001-04-31", "2023-02-29"])(
+      "rejects the non-existent date %p",
+      (value) => {
+        expect(checkDateOfBirth(value)).toMatchObject({
+          field: "dateOfBirth",
+          code: "DATE_OF_BIRTH_INVALID",
+        });
+      },
+    );
+    it("accepts a real leap day", () => {
+      expect(checkDateOfBirth("2000-02-29")).toBeNull();
+    });
+    it("handles a Feb 29 today: exactly 16 passes, one day later is too young", () => {
+      jest.setSystemTime(new Date("2028-02-29T12:00:00Z"));
+      expect(checkDateOfBirth("2012-02-29")).toBeNull();
+      expect(checkDateOfBirth("2012-03-01")?.code).toBe("DATE_OF_BIRTH_TOO_YOUNG");
+    });
+    it.each(["01/02/2000", "2000-1-2", "2000-01-02T00:00:00Z", " 2000-01-02", "", "abc", "20000102"])(
+      "rejects the malformed value %p",
+      (value) => {
+        expect(checkDateOfBirth(value)?.code).toBe("DATE_OF_BIRTH_INVALID");
+      },
+    );
+  });
+
+  describe("position", () => {
+    it.each(["goalkeeper", "defender", "midfielder", "attacker"])("PLAYER keeps %p", (p) => {
+      expect(resolvePosition("PLAYER", p)).toEqual({ position: p, error: null });
+    });
+    it.each(["Forward", "Goalkeeper", "Portero", "", "striker"])("PLAYER rejects %p", (p) => {
+      expect(resolvePosition("PLAYER", p).error).toMatchObject({
+        field: "position",
+        code: "POSITION_INVALID",
+      });
+    });
+    it("PLAYER keeps undefined (untouched) and null (cleared)", () => {
+      expect(resolvePosition("PLAYER", undefined)).toEqual({ position: undefined, error: null });
+      expect(resolvePosition("PLAYER", null)).toEqual({ position: null, error: null });
+    });
+    it.each(["COACH", "CLUB", "UMPIRE", "SUPERADMIN"])(
+      "%s ignores a provided position and stores null",
+      (role) => {
+        expect(resolvePosition(role, "goalkeeper")).toEqual({ position: null, error: null });
+        expect(resolvePosition(role, "not-a-position")).toEqual({ position: null, error: null });
+      },
+    );
+    it("non-PLAYER without position leaves it untouched", () => {
+      expect(resolvePosition("COACH", undefined)).toEqual({ position: undefined, error: null });
+    });
+  });
+
+  describe("checkRegisterCredentials", () => {
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date("2026-10-09T12:00:00Z"));
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it("reports credential and dateOfBirth errors together", () => {
+      const { errors } = checkRegisterCredentials({
+        email: "bad",
+        name: "Ana",
+        password: "Str0ng!Passw0rd",
+        dateOfBirth: "1800-01-01",
+      });
+      expect(errors.map((e) => e.code).sort()).toEqual(["DATE_OF_BIRTH_TOO_OLD", "EMAIL_INVALID"]);
     });
   });
 

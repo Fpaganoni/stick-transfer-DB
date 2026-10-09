@@ -10,6 +10,7 @@ import {
 } from "@nestjs/graphql";
 import {
   ForbiddenException,
+  NotFoundException,
   UnauthorizedException,
   UseGuards,
 } from "@nestjs/common";
@@ -25,11 +26,13 @@ import { Throttle } from "@nestjs/throttler";
 import { AppError, FieldError } from "../common/errors/app.error";
 import { mapUniqueViolation } from "../common/errors/unique-violation";
 import {
+  checkDateOfBirth,
   checkEmail,
+  checkRegisterCredentials,
   checkUsername,
   normalizeEmail,
   normalizeUsername,
-  validateRegisterCredentials,
+  resolvePosition,
   validateUsernameOrThrow,
 } from "./validation/credentials";
 
@@ -107,18 +110,22 @@ export class UsersResolver {
     @Args("managedByFirstName", { nullable: true }) managedByFirstName?: string,
     @Args("managedByLastName", { nullable: true }) managedByLastName?: string,
   ) {
-    // Normalizes (trim/lowercase) and validates email, name, username, password.
-    const { email, name, username, password } = validateRegisterCredentials({
+    // Normalizes (trim/lowercase) and validates email, name, username, password
+    // and dateOfBirth. Errors are merged with the role/position ones below so the
+    // client gets a single VALIDATION_ERROR.
+    const { values, errors: roleErrors } = checkRegisterCredentials({
       email: rawEmail,
       name: rawName,
       username: rawUsername,
       password: rawPassword,
+      dateOfBirth,
     });
+    const { email, name, username, password } = values;
 
     // Normalize role to uppercase for case-insensitive validation
-    const normalizedRole = role?.toUpperCase();
+    // A blank role means "not provided" (defaults to PLAYER), not an unknown role.
+    const normalizedRole = role?.trim().toUpperCase() || undefined;
 
-    const roleErrors: FieldError[] = [];
     // SUPERADMIN cannot self-register
     if (
       normalizedRole &&
@@ -148,6 +155,13 @@ export class UsersResolver {
         }
       }
     }
+    // Only PLAYER stores a position (role defaults to PLAYER). With an invalid
+    // role we skip the check; ROLE_INVALID is already reported.
+    const roleIsValid = !roleErrors.some((e) => e.field === "role");
+    const resolvedPosition = roleIsValid
+      ? resolvePosition(normalizedRole ?? "PLAYER", position)
+      : { position: undefined, error: null };
+    if (resolvedPosition.error) roleErrors.push(resolvedPosition.error);
     if (roleErrors.length) throw AppError.validation(roleErrors);
 
     if (await this.usersService.isEmailTaken(email)) throw AppError.emailTaken();
@@ -164,7 +178,7 @@ export class UsersResolver {
         role: normalizedRole,
         country,
         city,
-        position,
+        position: resolvedPosition.position,
         dateOfBirth,
       });
 
@@ -363,6 +377,22 @@ export class UsersResolver {
     const currentUser = this.requireSelfOrAdmin(context, id);
     const username = validateUsernameOrThrow(rawUsername);
 
+    const profileErrors: FieldError[] = [];
+    const dateOfBirthError = checkDateOfBirth(dateOfBirth);
+    if (dateOfBirthError) profileErrors.push(dateOfBirthError);
+
+    // Only PLAYER stores a position: judge by the stored role, not the caller's
+    // (an admin may edit someone else). Skip the lookup when it is not sent.
+    let resolvedPosition: string | null | undefined;
+    if (position !== undefined) {
+      const target = await this.usersService.findById(id);
+      if (!target) throw new NotFoundException("User not found");
+      const result = resolvePosition(target.role, position);
+      if (result.error) profileErrors.push(result.error);
+      resolvedPosition = result.position;
+    }
+    if (profileErrors.length) throw AppError.validation(profileErrors);
+
     // Joining a club requires an accepted invitation; only admins can force it.
     if (clubId && currentUser.role !== "SUPERADMIN") {
       await this.usersService.assertActiveClubMember(id, clubId);
@@ -376,7 +406,7 @@ export class UsersResolver {
         avatar,
         coverImage,
         coverImagePosition,
-        position,
+        position: resolvedPosition,
         country,
         city,
         clubId,

@@ -74,6 +74,94 @@ describe("UsersResolver - register/login/availability", () => {
     });
   });
 
+  describe("register - dateOfBirth and position", () => {
+    // Frozen clock: "today" is 2026-10-09 (UTC).
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date("2026-10-09T12:00:00Z"));
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    const registerWith = (
+      dateOfBirth?: string,
+      role?: string,
+      position?: string,
+      email = "a@b.com",
+    ) =>
+      resolver.register(
+        ctx, email, "Ana", undefined, STRONG, role, undefined, undefined, position, dateOfBirth,
+      );
+
+    it.each(["1800-01-01", "2030-01-01", "2011-10-09", "2001-02-30", "01/02/2000"])(
+      "rejects dateOfBirth %p with VALIDATION_ERROR on field dateOfBirth",
+      async (dob) => {
+        const err = await codeOf(registerWith(dob));
+        expect(err.code).toBe("VALIDATION_ERROR");
+        expect(err.getStatus()).toBe(400);
+        expect(err.fields?.map((f) => f.field)).toEqual(["dateOfBirth"]);
+        expect(usersService.createUser).not.toHaveBeenCalled();
+      },
+    );
+
+    it("maps each dateOfBirth failure to its code", async () => {
+      expect((await codeOf(registerWith("1800-01-01"))).fields?.[0].code).toBe("DATE_OF_BIRTH_TOO_OLD");
+      expect((await codeOf(registerWith("2030-01-01"))).fields?.[0].code).toBe("DATE_OF_BIRTH_TOO_YOUNG");
+      expect((await codeOf(registerWith("2001-02-30"))).fields?.[0].code).toBe("DATE_OF_BIRTH_INVALID");
+    });
+
+    it("accepts exactly 16 years old today", async () => {
+      await registerWith("2010-10-09");
+      expect(usersService.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ dateOfBirth: "2010-10-09" }),
+      );
+    });
+
+    it("returns dateOfBirth and other errors in a single VALIDATION_ERROR", async () => {
+      const err = await codeOf(registerWith("2030-01-01", "WIZARD", undefined, "bad"));
+      expect(err.fields?.map((f) => f.code).sort()).toEqual([
+        "DATE_OF_BIRTH_TOO_YOUNG",
+        "EMAIL_INVALID",
+        "ROLE_INVALID",
+      ]);
+    });
+
+    it("does not hit the email lookup when dateOfBirth is invalid", async () => {
+      await codeOf(registerWith("1800-01-01"));
+      expect(usersService.isEmailTaken).not.toHaveBeenCalled();
+    });
+
+    it("stores null position for a COACH that sends one", async () => {
+      await registerWith("1990-05-05", "coach", "goalkeeper");
+      expect(usersService.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ role: "COACH", position: null }),
+      );
+    });
+
+    it("keeps a valid position for a PLAYER (explicit and default role)", async () => {
+      await registerWith(undefined, "PLAYER", "attacker");
+      expect(usersService.createUser).toHaveBeenLastCalledWith(
+        expect.objectContaining({ role: "PLAYER", position: "attacker" }),
+      );
+      await registerWith(undefined, undefined, "defender");
+      expect(usersService.createUser).toHaveBeenLastCalledWith(
+        expect.objectContaining({ position: "defender" }),
+      );
+    });
+
+    it("treats a blank role as the default PLAYER for the position rule", async () => {
+      const err = await codeOf(registerWith(undefined, "  ", "Forward"));
+      expect(err.fields?.[0]).toMatchObject({ field: "position", code: "POSITION_INVALID" });
+    });
+
+    it("rejects an invalid PLAYER position with POSITION_INVALID", async () => {
+      const err = await codeOf(registerWith(undefined, "PLAYER", "Forward"));
+      expect(err.code).toBe("VALIDATION_ERROR");
+      expect(err.fields?.[0]).toMatchObject({ field: "position", code: "POSITION_INVALID" });
+      expect(usersService.createUser).not.toHaveBeenCalled();
+    });
+  });
+
   describe("login", () => {
     it("throws INVALID_CREDENTIALS (401) when validateUser returns null", async () => {
       authService.validateUser.mockResolvedValue(null);

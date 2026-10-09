@@ -97,6 +97,86 @@ describe("UsersResolver - authorization", () => {
       expect(usersService.assertActiveClubMember).not.toHaveBeenCalled();
       expect(usersService.updateUser).toHaveBeenCalled();
     });
+
+    describe("position and dateOfBirth", () => {
+      // updateUser takes positional args: position is #8 after ctx/id, dateOfBirth #15.
+      const POSITION_ARG = 8;
+      const DATE_OF_BIRTH_ARG = 15;
+      const update = (opts: { position?: string | null; dateOfBirth?: string }) => {
+        const args: unknown[] = [ctx, "u1"];
+        args[POSITION_ARG] = opts.position;
+        args[DATE_OF_BIRTH_ARG] = opts.dateOfBirth;
+        return (resolver as any).updateUser(...args);
+      };
+      const fieldsOf = async (p: Promise<unknown>) => {
+        try {
+          await p;
+        } catch (e: any) {
+          return e.fields as { field: string; code: string }[];
+        }
+        throw new Error("expected rejection");
+      };
+
+      beforeEach(() => {
+        jest.useFakeTimers().setSystemTime(new Date("2026-10-09T12:00:00Z"));
+        asUser("u1");
+      });
+      afterEach(() => {
+        jest.useRealTimers();
+      });
+
+      it.each(["1800-01-01", "2030-01-01", "2001-02-30", "01/02/2000"])(
+        "rejects dateOfBirth %p",
+        async (dateOfBirth) => {
+          const fields = await fieldsOf(update({ dateOfBirth }));
+          expect(fields.map((f) => f.field)).toEqual(["dateOfBirth"]);
+          expect(usersService.updateUser).not.toHaveBeenCalled();
+        },
+      );
+
+      it("passes a valid dateOfBirth through", async () => {
+        await update({ dateOfBirth: "2010-10-09" });
+        expect(usersService.updateUser).toHaveBeenCalledWith(
+          "u1",
+          expect.objectContaining({ dateOfBirth: "2010-10-09" }),
+        );
+      });
+
+      it("keeps a valid position for a stored PLAYER", async () => {
+        await update({ position: "attacker" });
+        expect(usersService.updateUser).toHaveBeenCalledWith(
+          "u1",
+          expect.objectContaining({ position: "attacker" }),
+        );
+      });
+
+      it("rejects an invalid position for a stored PLAYER", async () => {
+        const fields = await fieldsOf(update({ position: "Forward" }));
+        expect(fields).toEqual([expect.objectContaining({ field: "position", code: "POSITION_INVALID" })]);
+        expect(usersService.updateUser).not.toHaveBeenCalled();
+      });
+
+      it("stores null position when the stored role is not PLAYER", async () => {
+        usersService.findById.mockResolvedValue({ id: "u1", role: "COACH" });
+        await update({ position: "goalkeeper" });
+        expect(usersService.updateUser).toHaveBeenCalledWith(
+          "u1",
+          expect.objectContaining({ position: null }),
+        );
+      });
+
+      it("uses the stored role, not the caller's, when an admin edits", async () => {
+        asUser("admin", "SUPERADMIN");
+        usersService.findById.mockResolvedValue({ id: "u1", role: "PLAYER" });
+        const fields = await fieldsOf(update({ position: "striker" }));
+        expect(fields[0]).toMatchObject({ code: "POSITION_INVALID" });
+      });
+
+      it("does not look the user up when position is not sent", async () => {
+        await update({});
+        expect(usersService.findById).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe("private fields (email, licenseNumber)", () => {

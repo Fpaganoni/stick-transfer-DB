@@ -19,7 +19,8 @@ export class UsersService {
     role?: string;
     country?: string;
     city?: string;
-    position?: string;
+    position?: string | null;
+    /** Already validated as YYYY-MM-DD (see checkDateOfBirth). */
     dateOfBirth?: string;
   }) {
     const hashed = data.password
@@ -34,7 +35,7 @@ export class UsersService {
         role: data.role as any,
         country: data.country,
         city: data.city,
-        position: data.position as any,
+        position: data.position,
         dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
       },
     });
@@ -137,7 +138,7 @@ export class UsersService {
       avatar?: string | null;
       coverImage?: string | null;
       coverImagePosition?: string;
-      position?: string;
+      position?: string | null;
       country?: string;
       city?: string;
       clubId?: string;

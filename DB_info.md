@@ -1,5 +1,38 @@
 # DB_info
 
+## Fecha de nacimiento y position de User
+
+### `dateOfBirth` (`register` y `updateUser`)
+Formato estricto `YYYY-MM-DD` (fecha real: `2001-02-30` es invalida). Todo se calcula en UTC. Los terminos exigen
+16 anios minimo; maximo 100. Constantes `MIN_AGE = 16` y `MAX_AGE = 100` en `src/users/validation/credentials.ts`.
+Error -> 400 `VALIDATION_ERROR`, `field: "dateOfBirth"`, con uno de estos `code`:
+- `DATE_OF_BIRTH_INVALID`: formato distinto (`01/02/2000`, con hora, `""`) o fecha inexistente
+- `DATE_OF_BIRTH_TOO_YOUNG`: menor de 16 al dia de hoy (incluye fechas futuras)
+- `DATE_OF_BIRTH_TOO_OLD`: mas de 100 anios
+
+En `register` el error viene junto a los demas (email, password, role, ...) en UNA sola respuesta `VALIDATION_ERROR`.
+No enviar el campo (o `null`) lo deja sin validar.
+
+### CHECK en DB
+Migracion `20261009120000_add_user_dateofbirth_check`: `CHECK ("dateOfBirth" IS NULL OR "dateOfBirth" >= DATE '1900-01-01') NOT VALID`
+(constraint `User_dateOfBirth_min_check`). La edad minima/maxima NO esta en la DB porque depende de la fecha actual.
+`NOT VALID`: filas viejas no se escanean, pero un UPDATE sobre una fila que viole el CHECK falla igual. Tras limpiar:
+`ALTER TABLE "User" VALIDATE CONSTRAINT "User_dateOfBirth_min_check";`
+
+### `position`
+Solo el rol PLAYER guarda `position`. Valores: `goalkeeper | defender | midfielder | attacker`. Otro valor para un PLAYER
+-> 400 `VALIDATION_ERROR`, `field: "position"`, `code: "POSITION_INVALID"`. Para cualquier otro rol (COACH, CLUB, UMPIRE,
+SUPERADMIN) se ignora lo enviado y se guarda `null`.
+- `register`: usa el rol normalizado (sin rol = PLAYER).
+- `updateUser`: usa el rol GUARDADO del usuario editado (no el del que llama; un admin puede editar a otro). Si no se
+  envia `position` queda sin tocar; `null` la borra (PLAYER).
+
+Migracion de datos `20261009120100_normalize_user_positions`: `Goalkeeper|Defender|Midfielder|Forward` -> `goalkeeper|defender|midfielder|attacker`
+(solo PLAYER), `""` -> `NULL`, y position de roles no PLAYER -> `NULL`.
+
+### Datos mock eliminados
+Antes de esta regla se borraron 2 usuarios mock fuera de [hoy-100, hoy-16] (`1800-05-05` y `2030-01-01`). Repoblar con `pnpm prisma:seed`.
+
 ## Oportunidades UMPIRE
 
 ### Enum de DB `PositionType`

@@ -133,6 +133,76 @@ export function checkName(name?: string | null): FieldError | null {
   return null;
 }
 
+/** Minimum age required by the terms of service. */
+export const MIN_AGE = 16;
+export const MAX_AGE = 100;
+const DATE_OF_BIRTH_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function pad(value: number, length: number): string {
+  return String(value).padStart(length, "0");
+}
+
+/** `YYYY-MM-DD` of today (UTC) shifted back `years`. Compared as a string, so no Date edge cases (Feb 29). */
+function utcDateYearsAgo(years: number): string {
+  const now = new Date();
+  return `${pad(now.getUTCFullYear() - years, 4)}-${pad(now.getUTCMonth() + 1, 2)}-${pad(now.getUTCDate(), 2)}`;
+}
+
+function isRealCalendarDate(year: number, month: number, day: number): boolean {
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  );
+}
+
+/**
+ * Strict `YYYY-MM-DD`, a date that exists, between MAX_AGE and MIN_AGE years old
+ * as of today. Everything is computed in UTC. Undefined/null = not provided.
+ */
+export function checkDateOfBirth(value?: string): FieldError | null {
+  if (value === undefined || value === null) return null;
+  const match = DATE_OF_BIRTH_PATTERN.exec(value);
+  if (!match || !isRealCalendarDate(Number(match[1]), Number(match[2]), Number(match[3]))) {
+    return fail("dateOfBirth", "DATE_OF_BIRTH_INVALID", "Date of birth must be a real date as YYYY-MM-DD");
+  }
+  if (value > utcDateYearsAgo(MIN_AGE)) {
+    return fail("dateOfBirth", "DATE_OF_BIRTH_TOO_YOUNG", `You must be at least ${MIN_AGE} years old`);
+  }
+  if (value < utcDateYearsAgo(MAX_AGE)) {
+    return fail("dateOfBirth", "DATE_OF_BIRTH_TOO_OLD", `Age cannot be over ${MAX_AGE} years`);
+  }
+  return null;
+}
+
+/** Same values as the front's types/enums.ts. */
+export const PLAYER_POSITIONS = ["goalkeeper", "defender", "midfielder", "attacker"] as const;
+
+/**
+ * Only PLAYER stores a position. For any other role a provided position is
+ * ignored and stored as null. For PLAYER it must be one of PLAYER_POSITIONS.
+ * `position`: undefined = not provided (leave untouched), null = clear.
+ */
+export function resolvePosition(
+  role: string,
+  position?: string | null,
+): { position: string | null | undefined; error: FieldError | null } {
+  if (position === undefined) return { position: undefined, error: null };
+  if (role !== "PLAYER") return { position: null, error: null };
+  if (position === null) return { position: null, error: null };
+  if (!(PLAYER_POSITIONS as readonly string[]).includes(position)) {
+    return {
+      position: undefined,
+      error: fail(
+        "position",
+        "POSITION_INVALID",
+        `Position must be one of: ${PLAYER_POSITIONS.join(", ")}`,
+      ),
+    };
+  }
+  return { position, error: null };
+}
+
 export interface RegisterCredentials {
   email: string;
   name: string;
@@ -140,16 +210,23 @@ export interface RegisterCredentials {
   username?: string;
 }
 
-/**
- * Normalizes and validates the register credentials, collecting one error per
- * failing field. Throws AppError VALIDATION_ERROR, or returns the clean values.
- */
-export function validateRegisterCredentials(input: {
+export interface RegisterCredentialsInput {
   email: string;
   name: string;
   password?: string;
   username?: string | null;
-}): RegisterCredentials {
+  dateOfBirth?: string;
+}
+
+/**
+ * Normalizes the register credentials and collects one error per failing
+ * field, without throwing, so callers can merge further checks (role, etc.)
+ * into a single VALIDATION_ERROR response.
+ */
+export function checkRegisterCredentials(input: RegisterCredentialsInput): {
+  values: RegisterCredentials;
+  errors: FieldError[];
+} {
   const email = normalizeEmail(input.email);
   const username = normalizeUsername(input.username);
   const name = (input.name ?? "").trim();
@@ -159,10 +236,20 @@ export function validateRegisterCredentials(input: {
     checkName(name),
     checkUsername(username),
     checkPassword(input.password),
+    checkDateOfBirth(input.dateOfBirth),
   ].filter((e): e is FieldError => e !== null);
 
+  return { values: { email, name, username, password: input.password }, errors };
+}
+
+/**
+ * Normalizes and validates the register credentials, collecting one error per
+ * failing field. Throws AppError VALIDATION_ERROR, or returns the clean values.
+ */
+export function validateRegisterCredentials(input: RegisterCredentialsInput): RegisterCredentials {
+  const { values, errors } = checkRegisterCredentials(input);
   if (errors.length) throw AppError.validation(errors);
-  return { email, name, username, password: input.password };
+  return values;
 }
 
 /** Validates a username on profile update (undefined = unchanged). */
