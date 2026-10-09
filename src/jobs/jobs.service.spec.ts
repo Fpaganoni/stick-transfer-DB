@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from "@nestjs/common";
@@ -7,6 +8,7 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { JobsService } from "./jobs.service";
 import { PrismaService } from "../prisma.service";
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "../common/pagination";
 
 const mockEventEmitter = {
   emit: jest.fn(),
@@ -26,7 +28,17 @@ const mockPrismaService = {
     findMany: jest.fn(),
     findUnique: jest.fn(),
     findFirst: jest.fn(),
+    findUniqueOrThrow: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
+  },
+  club: {
+    findUnique: jest.fn(),
+  },
+  savedJob: {
+    create: jest.fn(),
+    findMany: jest.fn(),
+    deleteMany: jest.fn(),
   },
 };
 
@@ -57,7 +69,7 @@ describe("JobsService", () => {
       const result = await service.findAll();
 
       expect(prisma.jobOpportunity.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ orderBy: { createdAt: "desc" } })
+        expect.objectContaining({ orderBy: [{ createdAt: "desc" }, { id: "desc" }] })
       );
       expect(result).toEqual(mockJobs);
     });
@@ -75,6 +87,62 @@ describe("JobsService", () => {
   });
 
   // ── findById ──────────────────────────────────────────────────────────────
+  describe("findAll - pagination", () => {
+    beforeEach(() => prisma.jobOpportunity.findMany.mockResolvedValue([]));
+
+    it("never returns an unbounded list: applies the default page size", async () => {
+      await service.findAll();
+
+      expect(prisma.jobOpportunity.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: DEFAULT_PAGE_SIZE, skip: undefined }),
+      );
+    });
+
+    it("accepts the maximum limit but rejects anything above it", async () => {
+      await service.findAll({}, 1, MAX_PAGE_SIZE);
+      expect(prisma.jobOpportunity.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: MAX_PAGE_SIZE }),
+      );
+
+      await expect(service.findAll({}, 1, MAX_PAGE_SIZE + 1)).rejects.toThrow(BadRequestException);
+    });
+
+    it("breaks createdAt ties by id so pages never repeat or drop rows", async () => {
+      await service.findAll();
+
+      expect(prisma.jobOpportunity.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: [{ createdAt: "desc" }, { id: "desc" }] }),
+      );
+    });
+
+    it("computes skip from page and limit", async () => {
+      await service.findAll({}, 3, 20);
+
+      expect(prisma.jobOpportunity.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 20, skip: 40 }),
+      );
+    });
+
+    it("rejects a non-integer page or limit with a 400", async () => {
+      await expect(service.findAll({}, 1.5, 10)).rejects.toThrow(BadRequestException);
+      await expect(service.findAll({}, 1, -5)).rejects.toThrow(BadRequestException);
+      expect(prisma.jobOpportunity.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("getClubApplications - pagination", () => {
+    it("bounds the query with the default page size", async () => {
+      prisma.club.findUnique.mockResolvedValue({ id: "club-1" });
+      prisma.jobApplication.findMany.mockResolvedValue([]);
+
+      await service.getClubApplications("club-1", "club-1");
+
+      expect(prisma.jobApplication.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: DEFAULT_PAGE_SIZE }),
+      );
+    });
+  });
+
   describe("findById", () => {
     it("should return job with club included", async () => {
       const mockJob = { id: "job-1", title: "Defender", club: { name: "HC Madrid" } };
@@ -247,6 +315,12 @@ describe("JobsService", () => {
       expect(result).toEqual(mockApplication);
     });
 
+    it("reports 'already applied' as a 409 Conflict, not a masked 500", async () => {
+      prisma.jobApplication.create.mockRejectedValue({ code: "P2002" });
+
+      await expect(service.applyForJob(applicationData)).rejects.toThrow(ConflictException);
+    });
+
     it("should throw 'already applied' on duplicate application (P2002)", async () => {
       prisma.jobApplication.create.mockRejectedValue({ code: "P2002" });
 
@@ -259,21 +333,193 @@ describe("JobsService", () => {
       prisma.jobApplication.create.mockRejectedValue(new Error("DB timeout"));
       await expect(service.applyForJob(applicationData)).rejects.toThrow("DB timeout");
     });
+
+    describe("re-applying after withdrawing", () => {
+      const reactivated = {
+        id: "app-1",
+        jobOpportunity: { club: { id: "club-admin-1" } },
+      };
+
+      afterEach(() => {
+        prisma.jobApplication.findUnique.mockReset();
+        prisma.jobApplication.updateMany.mockReset();
+        prisma.jobApplication.findUniqueOrThrow.mockReset();
+      });
+
+      it("reactivates a WITHDRAWN application as PENDING instead of failing", async () => {
+        prisma.jobApplication.findUnique.mockResolvedValue({
+          id: "app-1",
+          status: "WITHDRAWN",
+        });
+        prisma.jobApplication.updateMany.mockResolvedValue({ count: 1 });
+        prisma.jobApplication.findUniqueOrThrow.mockResolvedValue(reactivated);
+
+        const result = await service.applyForJob(applicationData);
+
+        expect(prisma.jobApplication.create).not.toHaveBeenCalled();
+        expect(prisma.jobApplication.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: "app-1", status: "WITHDRAWN" },
+            data: expect.objectContaining({
+              status: "PENDING",
+              coverLetter: "I want to join!",
+            }),
+          }),
+        );
+        // The club's review trail survives a withdraw + re-apply cycle.
+        const { data } = prisma.jobApplication.updateMany.mock.calls[0][0];
+        expect(data).not.toHaveProperty("reviewedAt");
+        expect(data).not.toHaveProperty("reviewedBy");
+        expect(data).not.toHaveProperty("notes");
+        expect(result).toEqual(reactivated);
+        expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+          "job.application_received",
+          expect.objectContaining({ recipientId: "club-admin-1", entityId: "app-1" }),
+        );
+      });
+
+      it("loses the race safely: no row matched means 'already applied', no event", async () => {
+        prisma.jobApplication.findUnique.mockResolvedValue({
+          id: "app-1",
+          status: "WITHDRAWN",
+        });
+        prisma.jobApplication.updateMany.mockResolvedValue({ count: 0 });
+
+        await expect(service.applyForJob(applicationData)).rejects.toThrow(
+          "You have already applied for this job",
+        );
+        expect(prisma.jobApplication.findUniqueOrThrow).not.toHaveBeenCalled();
+        expect(mockEventEmitter.emit).not.toHaveBeenCalled();
+      });
+
+      it.each(["PENDING", "UNDER_REVIEW", "ACCEPTED", "REJECTED"])(
+        "still rejects when the existing application is %s",
+        async (status) => {
+          prisma.jobApplication.findUnique.mockResolvedValue({ id: "app-1", status });
+
+          await expect(service.applyForJob(applicationData)).rejects.toThrow(
+            "You have already applied for this job",
+          );
+          expect(prisma.jobApplication.create).not.toHaveBeenCalled();
+          expect(prisma.jobApplication.updateMany).not.toHaveBeenCalled();
+        },
+      );
+    });
+  });
+
+  // ── saved jobs ────────────────────────────────────────────────────────────
+  describe("saveJob", () => {
+    it("saves the job for the user", async () => {
+      prisma.savedJob.create.mockResolvedValue({ id: "s1" });
+
+      await expect(service.saveJob("user-1", "job-1")).resolves.toBe(true);
+
+      expect(prisma.savedJob.create).toHaveBeenCalledWith({
+        data: { userId: "user-1", jobOpportunityId: "job-1" },
+      });
+    });
+
+    it("is idempotent: saving twice does not fail (P2002)", async () => {
+      prisma.savedJob.create
+        .mockResolvedValueOnce({ id: "s1" })
+        .mockRejectedValueOnce({ code: "P2002" });
+
+      await expect(service.saveJob("user-1", "job-1")).resolves.toBe(true);
+      await expect(service.saveJob("user-1", "job-1")).resolves.toBe(true);
+    });
+
+    it("throws NotFoundException (404) when the job does not exist (P2003)", async () => {
+      prisma.savedJob.create.mockRejectedValue({ code: "P2003" });
+
+      await expect(service.saveJob("user-1", "missing")).rejects.toThrow(NotFoundException);
+    });
+
+    it("rethrows unexpected errors", async () => {
+      prisma.savedJob.create.mockRejectedValue(new Error("DB timeout"));
+
+      await expect(service.saveJob("user-1", "job-1")).rejects.toThrow("DB timeout");
+    });
+
+    it("rethrows a non-object rejection as-is instead of crashing on error.code", async () => {
+      prisma.savedJob.create.mockRejectedValue(null);
+
+      await expect(service.saveJob("user-1", "job-1")).rejects.toBeNull();
+    });
+  });
+
+  describe("findSavedJobIds", () => {
+    it("resolves all requested jobs with ONE savedJob query", async () => {
+      prisma.savedJob.findMany.mockResolvedValue([{ jobOpportunityId: "job-2" }]);
+
+      const saved = await service.findSavedJobIds("user-1", ["job-1", "job-2", "job-3"]);
+
+      expect(prisma.savedJob.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.savedJob.findMany).toHaveBeenCalledWith({
+        where: { userId: "user-1", jobOpportunityId: { in: ["job-1", "job-2", "job-3"] } },
+        select: { jobOpportunityId: true },
+      });
+      expect([...saved]).toEqual(["job-2"]);
+    });
+  });
+
+  describe("findAppliedJobIds", () => {
+    it("resolves with ONE query and ignores WITHDRAWN applications", async () => {
+      prisma.jobApplication.findMany.mockResolvedValue([{ jobOpportunityId: "job-1" }]);
+
+      const applied = await service.findAppliedJobIds("user-1", ["job-1", "job-2"]);
+
+      expect(prisma.jobApplication.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.jobApplication.findMany).toHaveBeenCalledWith({
+        where: {
+          userId: "user-1",
+          jobOpportunityId: { in: ["job-1", "job-2"] },
+          status: { not: "WITHDRAWN" },
+        },
+        select: { jobOpportunityId: true },
+      });
+      expect([...applied]).toEqual(["job-1"]);
+    });
   });
 
   // ── withdrawApplication ───────────────────────────────────────────────────
   describe("withdrawApplication", () => {
+    afterEach(() => {
+      prisma.jobApplication.updateMany.mockReset();
+      prisma.jobApplication.findUniqueOrThrow.mockReset();
+    });
+
     it("should set application status to WITHDRAWN", async () => {
       const mockApp = { id: "app-1", userId: "user-1" };
       prisma.jobApplication.findFirst.mockResolvedValue(mockApp);
-      prisma.jobApplication.update.mockResolvedValue({ ...mockApp, status: "WITHDRAWN" });
+      prisma.jobApplication.updateMany.mockResolvedValue({ count: 1 });
+      prisma.jobApplication.findUniqueOrThrow.mockResolvedValue({
+        ...mockApp,
+        status: "WITHDRAWN",
+      });
 
-      await service.withdrawApplication("app-1", "user-1");
+      const result = await service.withdrawApplication("app-1", "user-1");
 
-      expect(prisma.jobApplication.update).toHaveBeenCalledWith({
-        where: { id: "app-1" },
+      expect(prisma.jobApplication.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: "app-1",
+          userId: "user-1",
+          status: { notIn: ["REJECTED", "ACCEPTED"] },
+        },
         data: { status: "WITHDRAWN" },
       });
+      expect(result).toEqual({ ...mockApp, status: "WITHDRAWN" });
+    });
+
+    it("refuses to withdraw a decided (REJECTED/ACCEPTED) application, atomically", async () => {
+      // The status guard lives in the WHERE, so a club decision that lands
+      // between our read and our write is never overwritten: no row matches.
+      prisma.jobApplication.findFirst.mockResolvedValue({ id: "app-1", userId: "user-1" });
+      prisma.jobApplication.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.withdrawApplication("app-1", "user-1")).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(prisma.jobApplication.findUniqueOrThrow).not.toHaveBeenCalled();
     });
 
     it("should throw if application not found or belongs to another user", async () => {
@@ -283,7 +529,7 @@ describe("JobsService", () => {
       await expect(service.withdrawApplication("app-1", "attacker-user")).rejects.toThrow(
         "Application not found or not authorized"
       );
-      expect(prisma.jobApplication.update).not.toHaveBeenCalled();
+      expect(prisma.jobApplication.updateMany).not.toHaveBeenCalled();
     });
   });
 
@@ -344,6 +590,70 @@ describe("JobsService", () => {
         expect.objectContaining({
           where: { jobOpportunityId: "job-1", status: "PENDING" },
         })
+      );
+    });
+  });
+
+  describe("bounded lists", () => {
+    beforeEach(() => {
+      prisma.jobApplication.findMany.mockResolvedValue([]);
+      prisma.savedJob.findMany.mockResolvedValue([]);
+      prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1" });
+    });
+
+    it("getApplications applies the default page size and a stable order", async () => {
+      await service.getApplications("job-1", undefined, { userId: "club-1", role: "CLUB" });
+
+      expect(prisma.jobApplication.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: DEFAULT_PAGE_SIZE,
+          orderBy: [{ appliedAt: "desc" }, { id: "desc" }],
+        }),
+      );
+    });
+
+    it("getApplications honours page and limit", async () => {
+      await service.getApplications("job-1", undefined, { userId: "club-1", role: "CLUB" }, 2, 10);
+
+      expect(prisma.jobApplication.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 10, skip: 10 }),
+      );
+    });
+
+    it("getUserApplications applies the default page size and a stable order", async () => {
+      await service.getUserApplications("user-1");
+
+      expect(prisma.jobApplication.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: DEFAULT_PAGE_SIZE,
+          orderBy: [{ appliedAt: "desc" }, { id: "desc" }],
+        }),
+      );
+    });
+
+    it("getUserApplications rejects a limit above the maximum", async () => {
+      await expect(
+        service.getUserApplications("user-1", undefined, 1, MAX_PAGE_SIZE + 1),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it("getSavedJobs applies the default page size and a stable order", async () => {
+      await service.getSavedJobs("user-1");
+
+      expect(prisma.savedJob.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: "user-1" },
+          take: DEFAULT_PAGE_SIZE,
+          orderBy: [{ savedAt: "desc" }, { id: "desc" }],
+        }),
+      );
+    });
+
+    it("getSavedJobs honours page and limit", async () => {
+      await service.getSavedJobs("user-1", 3, 20);
+
+      expect(prisma.savedJob.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 20, skip: 40 }),
       );
     });
   });

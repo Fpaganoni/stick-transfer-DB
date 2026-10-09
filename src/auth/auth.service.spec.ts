@@ -1,10 +1,18 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { JwtService } from "@nestjs/jwt";
 import { UnauthorizedException } from "@nestjs/common";
+import express from "express";
+import request from "supertest";
 import { AuthService } from "./auth.service";
 import { PrismaService } from "../prisma.service";
 import { AUTH_COOKIE_NAME } from "./auth.constants";
 import * as bcrypt from "bcrypt";
+
+const originalNodeEnv = process.env.NODE_ENV;
+function restoreNodeEnv() {
+  if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+  else process.env.NODE_ENV = originalNodeEnv;
+}
 
 // Mock bcrypt to avoid actual hashing in unit tests (slow + unnecessary)
 jest.mock("bcrypt");
@@ -257,7 +265,7 @@ describe("AuthService", () => {
     const mockRes = { cookie: jest.fn() } as any;
 
     afterEach(() => {
-      delete process.env.NODE_ENV;
+      restoreNodeEnv();
       delete process.env.JWT_EXPIRES_IN;
     });
 
@@ -302,12 +310,42 @@ describe("AuthService", () => {
 
   // ── clearAuthCookie ───────────────────────────────────────────────────────
   describe("clearAuthCookie", () => {
-    it("clears the session cookie on the same path it was set on", () => {
-      const mockRes = { clearCookie: jest.fn() } as any;
+    afterEach(restoreNodeEnv);
 
-      service.clearAuthCookie(mockRes);
+    it.each(["production", "development"])(
+      "clears with the same attributes the cookie was set with (NODE_ENV=%s), without maxAge",
+      (env) => {
+        process.env.NODE_ENV = env;
+        const mockRes = { cookie: jest.fn(), clearCookie: jest.fn() } as any;
 
-      expect(mockRes.clearCookie).toHaveBeenCalledWith(AUTH_COOKIE_NAME, { path: "/" });
+        service.setAuthCookie(mockRes, "signed-jwt-token");
+        service.clearAuthCookie(mockRes);
+
+        const { maxAge, ...setOptions } = mockRes.cookie.mock.calls[0][2];
+        const [name, clearOptions] = mockRes.clearCookie.mock.calls[0];
+        expect(maxAge).toBeGreaterThan(0);
+        expect(name).toBe(AUTH_COOKIE_NAME);
+        expect(clearOptions).toEqual(setOptions);
+        expect(clearOptions).not.toHaveProperty("maxAge");
+      },
+    );
+
+    it("emits Set-Cookie with SameSite=None; Secure and an expired date in production", async () => {
+      process.env.NODE_ENV = "production";
+      const app = express();
+      app.get("/logout", (_req, res) => {
+        service.clearAuthCookie(res);
+        res.end();
+      });
+
+      const res = await request(app).get("/logout");
+
+      const header = String(res.headers["set-cookie"][0]);
+      expect(header).toContain(`${AUTH_COOKIE_NAME}=;`);
+      expect(header).toContain("SameSite=None");
+      expect(header).toContain("Secure");
+      expect(header).toContain("HttpOnly");
+      expect(header).toContain("Expires=Thu, 01 Jan 1970");
     });
   });
 

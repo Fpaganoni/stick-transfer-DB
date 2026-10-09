@@ -3,7 +3,12 @@ import { JwtService } from "@nestjs/jwt";
 import { PrismaService } from "../prisma.service";
 import * as bcrypt from "bcrypt";
 import { Response } from "express";
-import { AUTH_COOKIE_NAME, authCookieOptions, expiresInToMs } from "./auth.constants";
+import {
+  AUTH_COOKIE_NAME,
+  authCookieBaseOptions,
+  authCookieOptions,
+  expiresInToMs,
+} from "./auth.constants";
 import {
   isReservedUsername,
   normalizeEmail,
@@ -72,7 +77,7 @@ export class AuthService {
 
   /** Clears the session cookie on logout. */
   clearAuthCookie(res: Response) {
-    res.clearCookie(AUTH_COOKIE_NAME, { path: "/" });
+    res.clearCookie(AUTH_COOKIE_NAME, authCookieBaseOptions());
   }
 
   /**

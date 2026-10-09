@@ -66,7 +66,8 @@ export function formatGraphqlError(error: any) {
   if (
     gqlCode === "GRAPHQL_VALIDATION_FAILED" ||
     gqlCode === "GRAPHQL_PARSE_FAILED" ||
-    gqlCode === "BAD_USER_INPUT"
+    gqlCode === "BAD_USER_INPUT" ||
+    gqlCode === "BAD_REQUEST" // Apollo's own 400s, e.g. the CSRF prevention block
   ) {
     return build(error.message, 400, gqlCode);
   }

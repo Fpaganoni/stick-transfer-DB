@@ -1,8 +1,14 @@
-import { authCookieOptions, expiresInToMs, AUTH_COOKIE_NAME } from "./auth.constants";
+import {
+  authCookieBaseOptions,
+  authCookieOptions,
+  expiresInToMs,
+  AUTH_COOKIE_NAME,
+} from "./auth.constants";
 
 describe("auth.constants", () => {
   afterEach(() => {
     delete process.env.NODE_ENV;
+    delete process.env.AUTH_COOKIE_CROSS_SITE;
   });
 
   describe("AUTH_COOKIE_NAME", () => {
@@ -75,6 +81,38 @@ describe("auth.constants", () => {
 
       expect(options.secure).toBe(false);
       expect(options.sameSite).toBe("lax");
+    });
+
+    describe("AUTH_COOKIE_CROSS_SITE override", () => {
+      it("forces SameSite=None+Secure outside production (e.g. a staging deploy)", () => {
+        process.env.NODE_ENV = "staging";
+        process.env.AUTH_COOKIE_CROSS_SITE = "true";
+
+        expect(authCookieBaseOptions()).toMatchObject({ secure: true, sameSite: "none" });
+      });
+
+      it("forces Lax+non-Secure even in production when set to false", () => {
+        process.env.NODE_ENV = "production";
+        process.env.AUTH_COOKIE_CROSS_SITE = "false";
+
+        expect(authCookieBaseOptions()).toMatchObject({ secure: false, sameSite: "lax" });
+      });
+
+      it.each(["", "yes", "1", "TRUE-ish"])(
+        "ignores an unrecognised value (%p) and follows NODE_ENV",
+        (value) => {
+          process.env.NODE_ENV = "production";
+          process.env.AUTH_COOKIE_CROSS_SITE = value;
+
+          expect(authCookieBaseOptions()).toMatchObject({ secure: true, sameSite: "none" });
+        },
+      );
+
+      it("is case-insensitive for true/false", () => {
+        process.env.AUTH_COOKIE_CROSS_SITE = "TRUE";
+
+        expect(authCookieBaseOptions().sameSite).toBe("none");
+      });
     });
 
     it("always sets httpOnly regardless of environment", () => {

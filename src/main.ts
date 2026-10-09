@@ -6,6 +6,7 @@ import { ValidationPipe } from "@nestjs/common";
 import * as bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
 import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter";
+import { getAllowedOrigins } from "./common/cors";
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -26,15 +27,9 @@ async function bootstrap() {
   app.use(bodyParser.urlencoded({ extended: true, limit: "2mb" }));
   app.use(cookieParser());
 
-  // Enable CORS for frontend dynamically
-  const baseOrigins = ["http://localhost:3000", "http://localhost:3001"];
-  if (process.env.FRONTEND_URL) {
-    baseOrigins.push(process.env.FRONTEND_URL.replace(/\/+$/, ""));
-  }
-  const allowedOrigins = baseOrigins;
-
+  // Enable CORS for frontend dynamically (same allow-list as the websocket gateway)
   app.enableCors({
-    origin: allowedOrigins,
+    origin: getAllowedOrigins(),
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization", "Accept"],

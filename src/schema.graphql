@@ -185,7 +185,10 @@ type JobOpportunity {
   umpireCategory: UmpireCategory
   matchDate: String
   applications: [JobApplication!]!
+  """false when anonymous. Resolved with one batched query per request."""
   isSavedByCurrentUser: Boolean!
+  """false when anonymous or when the application is WITHDRAWN. One batched query per request."""
+  hasAppliedByCurrentUser: Boolean!
   createdAt: String!
 }
 
@@ -501,19 +504,31 @@ type Query {
   teamsByClub(clubId: ID!): [Team!]!
 
   # Job Opportunities
+  # Every list below is paginated: page >= 1 (default 1), limit 1..100 (default 50).
+  # A limit above 100 or a non-integer page/limit is a 400. Newest first, ties broken by id.
   jobOpportunities(
     filters: JobOpportunityFiltersInput
     page: Int
     limit: Int
   ): [JobOpportunity!]!
   jobOpportunity(id: String!): JobOpportunity
-  savedJobOpportunities: [JobOpportunity!]!
+  savedJobOpportunities(page: Int, limit: Int): [JobOpportunity!]!
 
   # Job Applications
   """Owning club or super admin only."""
-  jobApplications(jobOpportunityId: String!, status: String): [JobApplication!]!
+  jobApplications(
+    jobOpportunityId: String!
+    status: String
+    page: Int
+    limit: Int
+  ): [JobApplication!]!
   """Own applications or super admin only."""
-  userApplications(userId: String!, status: String): [JobApplication!]!
+  userApplications(
+    userId: String!
+    status: String
+    page: Int
+    limit: Int
+  ): [JobApplication!]!
   """Applicant, owning club or super admin only."""
   jobApplication(id: String!): JobApplication
   getClubApplications(

@@ -4,8 +4,10 @@ import { NotificationsService } from './notifications.service';
 import { NotificationsListener } from './notifications.listener';
 import { NotificationsResolver } from './notifications.resolver';
 import { PrismaService } from '../prisma.service';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
+  imports: [AuthModule],
   providers: [
     NotificationsGateway,
     NotificationsService,

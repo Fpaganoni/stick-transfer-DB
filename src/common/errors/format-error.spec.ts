@@ -80,6 +80,15 @@ describe("formatGraphqlError", () => {
     expect(out.extensions).toMatchObject({ code: "GRAPHQL_VALIDATION_FAILED", statusCode: 400 });
   });
 
+  it("keeps Apollo's BAD_REQUEST (e.g. CSRF block) as a 400 instead of a masked 500", () => {
+    const out: any = formatGraphqlError({
+      message: "This operation has been blocked as a potential Cross-Site Request Forgery (CSRF).",
+      extensions: { code: "BAD_REQUEST" },
+    });
+    expect(out.extensions).toMatchObject({ code: "BAD_REQUEST", statusCode: 400 });
+    expect(out.message).toMatch(/CSRF/);
+  });
+
   it("keeps UNAUTHENTICATED as 401", () => {
     const out: any = formatGraphqlError({
       message: "Authentication required",

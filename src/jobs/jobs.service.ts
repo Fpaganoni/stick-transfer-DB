@@ -1,16 +1,34 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   ForbiddenException,
   NotFoundException,
 } from "@nestjs/common";
 import { EventEmitter2 } from "@nestjs/event-emitter";
-import { NotificationType } from "@prisma/client";
+import { NotificationType, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
+import { normalizePagination } from "../common/pagination";
 
 export type JobActor = { userId: string; role: string };
 
 export const POSITION_TYPES = ["PLAYER", "COACH", "STAFF", "UMPIRE", "OTHER"];
+
+const ALREADY_APPLIED_MESSAGE = "You have already applied for this job";
+
+/** Final club decisions: they cannot be withdrawn, so withdraw + re-apply cannot undo them. */
+const DECIDED_STATUSES = ["REJECTED", "ACCEPTED"] as const;
+
+/** Newest first; id breaks timestamp ties so offset pages never repeat or drop rows. */
+const APPLICATION_ORDER: Prisma.JobApplicationOrderByWithRelationInput[] = [
+  { appliedAt: "desc" },
+  { id: "desc" },
+];
+
+const APPLICATION_WITH_CLUB = {
+  user: true,
+  jobOpportunity: { include: { club: true } },
+} as const;
 
 @Injectable()
 export class JobsService {
@@ -105,15 +123,14 @@ export class JobsService {
       ];
     }
 
-    const take = limit && limit > 0 ? limit : undefined;
-    const skip = take && page && page > 1 ? (page - 1) * take : undefined;
+    const { skip, take } = normalizePagination(page, limit);
 
     return this.prisma.jobOpportunity.findMany({
       where,
       include: {
         club: true,
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip,
       take,
     });
@@ -237,23 +254,33 @@ export class JobsService {
       );
     }
 
-    try {
-      const application = await this.prisma.jobApplication.create({
-        data: {
+    // (jobOpportunityId, userId) is unique: a WITHDRAWN row is reactivated
+    // instead of blocking the applicant from ever applying again.
+    const existing = await this.prisma.jobApplication.findUnique({
+      where: {
+        jobOpportunityId_userId: {
           jobOpportunityId: data.jobOpportunityId,
           userId: data.userId,
-          coverLetter: data.coverLetter,
-          resumeUrl: data.resumeUrl,
         },
-        include: {
-          user: true,
-          jobOpportunity: {
-            include: {
-              club: true,
+      },
+      select: { id: true, status: true },
+    });
+    if (existing && existing.status !== "WITHDRAWN") {
+      throw new ConflictException(ALREADY_APPLIED_MESSAGE);
+    }
+
+    try {
+      const application = existing
+        ? await this.reactivateApplication(existing.id, data)
+        : await this.prisma.jobApplication.create({
+            data: {
+              jobOpportunityId: data.jobOpportunityId,
+              userId: data.userId,
+              coverLetter: data.coverLetter,
+              resumeUrl: data.resumeUrl,
             },
-          },
-        },
-      });
+            include: APPLICATION_WITH_CLUB,
+          });
 
       const clubOwnerId = application.jobOpportunity.club.id;
       this.eventEmitter.emit("job.application_received", {
@@ -266,18 +293,50 @@ export class JobsService {
       return application;
     } catch (error) {
       if (error.code === "P2002") {
-        throw new Error("You have already applied for this job");
+        throw new ConflictException(ALREADY_APPLIED_MESSAGE);
       }
       throw error;
     }
+  }
+
+  /**
+   * Resets a WITHDRAWN application to PENDING with the new payload. The club's
+   * review trail (reviewedAt/reviewedBy/notes) is kept: only an UNDER_REVIEW or
+   * PENDING application can be withdrawn, and its notes belong to the club.
+   * The status guard in the WHERE makes it atomic: a concurrent apply (or a
+   * club decision made after our read) matches 0 rows and is rejected instead
+   * of being overwritten.
+   */
+  private async reactivateApplication(
+    applicationId: string,
+    data: { coverLetter?: string; resumeUrl?: string },
+  ) {
+    const { count } = await this.prisma.jobApplication.updateMany({
+      where: { id: applicationId, status: "WITHDRAWN" },
+      data: {
+        status: "PENDING",
+        coverLetter: data.coverLetter ?? null,
+        resumeUrl: data.resumeUrl ?? null,
+        appliedAt: new Date(),
+      },
+    });
+    if (count === 0) throw new ConflictException(ALREADY_APPLIED_MESSAGE);
+
+    return this.prisma.jobApplication.findUniqueOrThrow({
+      where: { id: applicationId },
+      include: APPLICATION_WITH_CLUB,
+    });
   }
 
   async getApplications(
     jobOpportunityId: string,
     status: string | undefined,
     actor: JobActor,
+    page?: number,
+    limit?: number,
   ) {
     await this.assertCanManageJob(jobOpportunityId, actor);
+    const { skip, take } = normalizePagination(page, limit);
     return this.prisma.jobApplication.findMany({
       where: {
         jobOpportunityId,
@@ -286,11 +345,19 @@ export class JobsService {
       include: {
         user: true,
       },
-      orderBy: { appliedAt: "desc" },
+      orderBy: APPLICATION_ORDER,
+      skip,
+      take,
     });
   }
 
-  async getUserApplications(userId: string, status?: string) {
+  async getUserApplications(
+    userId: string,
+    status?: string,
+    page?: number,
+    limit?: number,
+  ) {
+    const { skip, take } = normalizePagination(page, limit);
     return this.prisma.jobApplication.findMany({
       where: {
         userId,
@@ -303,7 +370,9 @@ export class JobsService {
           },
         },
       },
-      orderBy: { appliedAt: "desc" },
+      orderBy: APPLICATION_ORDER,
+      skip,
+      take,
     });
   }
 
@@ -389,8 +458,7 @@ export class JobsService {
     const where: any = { jobOpportunity: { clubId } };
     if (status) where.status = status as any;
 
-    const take = limit && limit > 0 ? limit : undefined;
-    const skip = take && page && page > 1 ? (page - 1) * take : undefined;
+    const { skip, take } = normalizePagination(page, limit);
 
     return this.prisma.jobApplication.findMany({
       where,
@@ -398,7 +466,7 @@ export class JobsService {
         user: true,
         jobOpportunity: { include: { club: true } },
       },
-      orderBy: { appliedAt: "desc" },
+      orderBy: APPLICATION_ORDER,
       skip,
       take,
     });
@@ -410,31 +478,69 @@ export class JobsService {
     });
 
     if (!application) {
-      throw new Error("Application not found or not authorized");
+      throw new NotFoundException("Application not found or not authorized");
     }
 
-    return this.prisma.jobApplication.update({
-      where: { id },
-      data: {
-        status: "WITHDRAWN",
-      },
+    // Re-applying reactivates WITHDRAWN rows, so the club's final decisions
+    // must stay sticky: otherwise withdraw + apply would reset them to PENDING.
+    // The guard is in the WHERE so a decision that lands after the read above
+    // matches no row instead of being overwritten.
+    const { count } = await this.prisma.jobApplication.updateMany({
+      where: { id, userId, status: { notIn: [...DECIDED_STATUSES] } },
+      data: { status: "WITHDRAWN" },
     });
+    if (count === 0) {
+      throw new ForbiddenException(
+        "An accepted or rejected application cannot be withdrawn",
+      );
+    }
+
+    return this.prisma.jobApplication.findUniqueOrThrow({ where: { id } });
   }
 
   // ─── Saved Jobs ────────────────────────────────────────────────────────
 
-  async isSavedByUser(userId: string, jobOpportunityId: string) {
-    const saved = await this.prisma.savedJob.findUnique({
-      where: { userId_jobOpportunityId: { userId, jobOpportunityId } },
+  /** Batched for the per-request loader: ONE query for any number of jobs. */
+  async findSavedJobIds(
+    userId: string,
+    jobOpportunityIds: string[],
+  ): Promise<Set<string>> {
+    const rows = await this.prisma.savedJob.findMany({
+      where: { userId, jobOpportunityId: { in: jobOpportunityIds } },
+      select: { jobOpportunityId: true },
     });
-    return !!saved;
+    return new Set(rows.map((row) => row.jobOpportunityId));
   }
 
+  /** Batched like findSavedJobIds; WITHDRAWN applications do not count. */
+  async findAppliedJobIds(
+    userId: string,
+    jobOpportunityIds: string[],
+  ): Promise<Set<string>> {
+    const rows = await this.prisma.jobApplication.findMany({
+      where: {
+        userId,
+        jobOpportunityId: { in: jobOpportunityIds },
+        status: { not: "WITHDRAWN" },
+      },
+      select: { jobOpportunityId: true },
+    });
+    return new Set(rows.map((row) => row.jobOpportunityId));
+  }
+
+  /**
+   * Idempotent: P2002 (already saved) is success. A missing job surfaces as a
+   * foreign-key violation (P2003) and becomes a 404 instead of a masked 500;
+   * mapping the DB error (no pre-check query) also covers a delete race.
+   */
   async saveJob(userId: string, jobOpportunityId: string) {
     try {
       await this.prisma.savedJob.create({ data: { userId, jobOpportunityId } });
     } catch (error) {
-      if (error.code !== "P2002") throw error; // already saved — idempotent
+      if (error?.code === "P2003") {
+        throw new NotFoundException("Job opportunity not found");
+      }
+      if (error?.code !== "P2002") throw error;
     }
     return true;
   }
@@ -444,11 +550,14 @@ export class JobsService {
     return true;
   }
 
-  async getSavedJobs(userId: string) {
+  async getSavedJobs(userId: string, page?: number, limit?: number) {
+    const { skip, take } = normalizePagination(page, limit);
     const saved = await this.prisma.savedJob.findMany({
       where: { userId },
       include: { jobOpportunity: { include: { club: true } } },
-      orderBy: { savedAt: "desc" },
+      orderBy: [{ savedAt: "desc" }, { id: "desc" }],
+      skip,
+      take,
     });
     return saved.map((s) => s.jobOpportunity);
   }

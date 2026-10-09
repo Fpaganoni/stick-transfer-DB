@@ -18,17 +18,38 @@ export function expiresInToMs(value: string | undefined): number {
 }
 
 /**
+ * Cookie attributes shared by set and clear: browsers only honor a deletion
+ * when secure/sameSite/path match the cookie that was set, so clearing must
+ * reuse these (without maxAge, which would override the expiry Express sets).
+ *
  * SameSite=None+Secure is rejected by browsers over plain HTTP (dev/localhost).
- * NODE_ENV=development relaxes to Lax+non-Secure so local dev keeps working;
- * production always gets the strict cross-site-safe settings.
+ * Any non-production NODE_ENV relaxes to Lax+non-Secure so local dev keeps
+ * working; production gets the strict cross-site-safe settings unless
+ * AUTH_COOKIE_CROSS_SITE says otherwise (see isCrossSiteCookie).
  */
-export function authCookieOptions(maxAgeMs: number) {
-  const isProd = process.env.NODE_ENV === "production";
+export function authCookieBaseOptions() {
+  const crossSite = isCrossSiteCookie();
   return {
     httpOnly: true,
-    secure: isProd,
-    sameSite: (isProd ? "none" : "lax") as "none" | "lax",
+    secure: crossSite,
+    sameSite: (crossSite ? "none" : "lax") as "none" | "lax",
     path: "/",
-    maxAge: maxAgeMs,
   };
+}
+
+/**
+ * AUTH_COOKIE_CROSS_SITE=true|false overrides the NODE_ENV default so a
+ * non-production deploy (staging) on its own domain can still use
+ * SameSite=None+Secure. Any other value is ignored.
+ */
+function isCrossSiteCookie(): boolean {
+  const override = process.env.AUTH_COOKIE_CROSS_SITE?.trim().toLowerCase();
+  if (override === "true") return true;
+  if (override === "false") return false;
+  return process.env.NODE_ENV === "production";
+}
+
+/** Attributes for setting the session cookie. */
+export function authCookieOptions(maxAgeMs: number) {
+  return { ...authCookieBaseOptions(), maxAge: maxAgeMs };
 }

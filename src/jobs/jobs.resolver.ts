@@ -10,6 +10,7 @@ import {
 } from "@nestjs/graphql";
 import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { JobsService } from "./jobs.service";
+import { JobsLoaders } from "./jobs.loaders";
 import { AuthService } from "../auth/auth.service";
 
 @Resolver("JobOpportunity")
@@ -17,6 +18,7 @@ export class JobsResolver {
   constructor(
     private jobsService: JobsService,
     private authService: AuthService,
+    private jobsLoaders: JobsLoaders,
   ) {}
 
   private getCurrentUser(context: any): { userId: string; role: string } | null {
@@ -42,18 +44,40 @@ export class JobsResolver {
     }
   }
 
-  // Field resolver for isSavedByCurrentUser — optional auth, false for anonymous
+  /** Runs a mutation that changes saved/applied state, then drops the request's loader cache (even on failure). */
+  private async resettingLoaders<T>(context: any, run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } finally {
+      this.jobsLoaders.reset(context);
+    }
+  }
+
+  // Optional auth, false for anonymous. Both fields go through per-request
+  // loaders: one query per request no matter how many jobs the response lists.
   @ResolveField()
   async isSavedByCurrentUser(@Parent() job: any, @Context() context: any) {
     const currentUser = this.getCurrentUser(context);
     if (!currentUser) return false;
-    return this.jobsService.isSavedByUser(currentUser.userId, job.id);
+    return this.jobsLoaders.forContext(context, currentUser.userId).isSaved.load(job.id);
+  }
+
+  // WITHDRAWN applications do not count (see JobsService.findAppliedJobIds)
+  @ResolveField()
+  async hasAppliedByCurrentUser(@Parent() job: any, @Context() context: any) {
+    const currentUser = this.getCurrentUser(context);
+    if (!currentUser) return false;
+    return this.jobsLoaders.forContext(context, currentUser.userId).hasApplied.load(job.id);
   }
 
   @Query(() => [Object])
-  async savedJobOpportunities(@Context() context: any) {
+  async savedJobOpportunities(
+    @Context() context: any,
+    @Args("page", { nullable: true }) page?: number,
+    @Args("limit", { nullable: true }) limit?: number,
+  ) {
     const currentUser = this.requireUser(context);
-    return this.jobsService.getSavedJobs(currentUser.userId);
+    return this.jobsService.getSavedJobs(currentUser.userId, page, limit);
   }
 
   @Mutation(() => Boolean)
@@ -62,7 +86,9 @@ export class JobsResolver {
     @Args("jobOpportunityId", { type: () => ID }) jobOpportunityId: string,
   ) {
     const currentUser = this.requireUser(context);
-    return this.jobsService.saveJob(currentUser.userId, jobOpportunityId);
+    return this.resettingLoaders(context, () =>
+      this.jobsService.saveJob(currentUser.userId, jobOpportunityId),
+    );
   }
 
   @Mutation(() => Boolean)
@@ -71,7 +97,9 @@ export class JobsResolver {
     @Args("jobOpportunityId", { type: () => ID }) jobOpportunityId: string,
   ) {
     const currentUser = this.requireUser(context);
-    return this.jobsService.unsaveJob(currentUser.userId, jobOpportunityId);
+    return this.resettingLoaders(context, () =>
+      this.jobsService.unsaveJob(currentUser.userId, jobOpportunityId),
+    );
   }
 
   @Query(() => [Object])
@@ -164,36 +192,48 @@ export class JobsResolver {
   ) {
     const currentUser = this.requireUser(context);
     this.assertSameUserIfProvided(currentUser, userId);
-    return this.jobsService.applyForJob({
-      jobOpportunityId,
-      userId: currentUser.userId,
-      role: currentUser.role,
-      coverLetter,
-      resumeUrl,
-    });
+    return this.resettingLoaders(context, () =>
+      this.jobsService.applyForJob({
+        jobOpportunityId,
+        userId: currentUser.userId,
+        role: currentUser.role,
+        coverLetter,
+        resumeUrl,
+      }),
+    );
   }
 
   @Query(() => [Object])
   async jobApplications(
     @Context() context: any,
     @Args("jobOpportunityId") jobOpportunityId: string,
-    @Args("status", { nullable: true }) status?: string
+    @Args("status", { nullable: true }) status?: string,
+    @Args("page", { nullable: true }) page?: number,
+    @Args("limit", { nullable: true }) limit?: number,
   ) {
     const currentUser = this.requireUser(context);
-    return this.jobsService.getApplications(jobOpportunityId, status, currentUser);
+    return this.jobsService.getApplications(
+      jobOpportunityId,
+      status,
+      currentUser,
+      page,
+      limit,
+    );
   }
 
   @Query(() => [Object])
   async userApplications(
     @Context() context: any,
     @Args("userId") userId: string,
-    @Args("status", { nullable: true }) status?: string
+    @Args("status", { nullable: true }) status?: string,
+    @Args("page", { nullable: true }) page?: number,
+    @Args("limit", { nullable: true }) limit?: number,
   ) {
     const currentUser = this.requireUser(context);
     if (currentUser.userId !== userId && currentUser.role !== "SUPERADMIN") {
       throw new ForbiddenException("You can only view your own applications");
     }
-    return this.jobsService.getUserApplications(userId, status);
+    return this.jobsService.getUserApplications(userId, status, page, limit);
   }
 
   @Query(() => Object, { nullable: true })
@@ -244,6 +284,8 @@ export class JobsResolver {
   ) {
     const currentUser = this.requireUser(context);
     this.assertSameUserIfProvided(currentUser, userId);
-    return this.jobsService.withdrawApplication(id, currentUser.userId);
+    return this.resettingLoaders(context, () =>
+      this.jobsService.withdrawApplication(id, currentUser.userId),
+    );
   }
 }

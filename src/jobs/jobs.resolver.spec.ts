@@ -1,4 +1,5 @@
 import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
+import { JobsLoaders } from "./jobs.loaders";
 import { JobsResolver } from "./jobs.resolver";
 
 describe("JobsResolver - authorization", () => {
@@ -22,7 +23,7 @@ describe("JobsResolver - authorization", () => {
       getApplicationById: jest.fn(),
     };
     authService = { getUserFromRequest: jest.fn() };
-    resolver = new JobsResolver(jobsService, authService);
+    resolver = new JobsResolver(jobsService, authService, new JobsLoaders(jobsService));
   });
 
   describe("unauthenticated", () => {
@@ -118,7 +119,16 @@ describe("JobsResolver - authorization", () => {
       expect(jobsService.delete).toHaveBeenCalledWith("j1", actor);
 
       await resolver.jobApplications(ctx, "j1", "PENDING");
-      expect(jobsService.getApplications).toHaveBeenCalledWith("j1", "PENDING", actor);
+      expect(jobsService.getApplications).toHaveBeenCalledWith(
+        "j1",
+        "PENDING",
+        actor,
+        undefined,
+        undefined,
+      );
+
+      await resolver.jobApplications(ctx, "j1", "PENDING", 2, 10);
+      expect(jobsService.getApplications).toHaveBeenLastCalledWith("j1", "PENDING", actor, 2, 10);
 
       await resolver.jobApplication(ctx, "a1");
       expect(jobsService.getApplicationById).toHaveBeenCalledWith("a1", actor);
