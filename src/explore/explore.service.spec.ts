@@ -82,7 +82,7 @@ describe("ExploreService", () => {
 
       await service.getExploreUsers({
         licenseLevel: "internacional",
-        modality: "sala",
+        modality: "outdoor",
         umpireCategory: "femenino",
       });
 
@@ -91,7 +91,7 @@ describe("ExploreService", () => {
           where: expect.objectContaining({
             role: "UMPIRE",
             licenseLevel: "INTERNACIONAL",
-            modalities: { has: "SALA" },
+            modalities: { has: "OUTDOOR" },
             umpireCategories: { has: "FEMENINO" },
           }),
         }),
@@ -102,6 +102,46 @@ describe("ExploreService", () => {
       await expect(
         service.getExploreUsers({ licenseLevel: "GALACTICO" }),
       ).rejects.toThrow("Invalid licenseLevel");
+    });
+
+    it.each([["CESPED"], ["SALA"]])("rejects the legacy modality %p", async (modality) => {
+      await expect(service.getExploreUsers({ modality })).rejects.toThrow(
+        "Invalid modality. Allowed: OUTDOOR, INDOOR",
+      );
+    });
+
+    it("filters by country code case-insensitively: 'ar' finds 'AR'", async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await service.getExploreUsers({ country: "ar" });
+
+      expect(prisma.user.findMany.mock.calls[0][0].where.country).toEqual({ in: ["AR"] });
+    });
+
+    it("an unknown country filter matches nothing", async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await service.getExploreUsers({ country: "Argentina" });
+
+      expect(prisma.user.findMany.mock.calls[0][0].where.country).toEqual({ in: [] });
+    });
+  });
+
+  describe("getExploreClubs", () => {
+    it("filters by country code case-insensitively: 'es' finds 'ES'", async () => {
+      prisma.club.findMany.mockResolvedValue([]);
+
+      await service.getExploreClubs({ country: "es" });
+
+      expect(prisma.club.findMany.mock.calls[0][0].where.country).toEqual({ in: ["ES"] });
+    });
+
+    it("an unknown country filter matches nothing", async () => {
+      prisma.club.findMany.mockResolvedValue([]);
+
+      await service.getExploreClubs({ country: "España" });
+
+      expect(prisma.club.findMany.mock.calls[0][0].where.country).toEqual({ in: [] });
     });
   });
 });

@@ -1,5 +1,41 @@
 # DB_info
 
+## Paises (`User.country`, `Club.country`, `JobOpportunity.country`)
+
+Se guardan como codigo ISO 3166-1 alfa-2 en mayuscula (`"AR"`, `"ES"`, `"NL"`), mas `GB-ENG`, `GB-SCT` y `GB-WLS`
+(Inglaterra, Escocia y Gales juegan por separado). Lista cerrada en `src/common/geo/countries.ts` (`COUNTRY_CODES`).
+El front muestra el nombre a partir del codigo (por ejemplo `Intl.DisplayNames`).
+
+### Entrada (`register`, `updateUser`, `createClub`, `updateClub`, `createJobOpportunity`)
+Se acepta el codigo en cualquier caso y con espacios (`" ar "` se guarda `"AR"`). Cualquier otra cosa (nombre, bandera,
+`""`) -> 400 `VALIDATION_ERROR`, `field: "country"`, `code: "COUNTRY_INVALID"`.
+- `register`: opcional (obligatorio para CLUB, que sin pais sigue dando `FIELD_REQUIRED`).
+- `updateUser`: sin enviar = sin cambio; `null` = borrar.
+- `updateClub`: `null` = sin cambio (columna obligatoria); `""` -> `COUNTRY_INVALID`.
+- `createClub` / `createJobOpportunity`: obligatorio.
+
+### Filtros (`jobOpportunities`, `exploreUsers`, `exploreClubs`)
+Igualdad sobre el codigo normalizado: `"ar"` encuentra `"AR"`. Un valor desconocido (`"Argentina"`) devuelve lista
+vacia, sin error. `availableCountries` devuelve codigos.
+
+### Migracion `20261010120000_normalize_country_codes`
+Generada por `prisma/scripts/generate-country-mapping.ts` (no editar a mano; regenerar con
+`npx ts-node prisma/scripts/generate-country-mapping.ts`). Mapea banderas emoji, nombres en/es/fr (con y sin acentos),
+`"🇪🇸 España"` y los alias de las home nations (England/Inglaterra/...). Lo que no mapea queda igual; `User.country = ""`
+pasa a `NULL`. Agrega `CHECK (country IS NULL OR country ~ '^[A-Z]{2}(-[A-Z]{3})?$') NOT VALID` en las 3 tablas
+(`<Tabla>_country_format_check`). Con NOT VALID una fila vieja sin mapear bloquea cualquier UPDATE de esa fila. Tras
+confirmar que no queda ninguna: `ALTER TABLE "<Tabla>" VALIDATE CONSTRAINT "<Tabla>_country_format_check";`
+
+## Multimedia de UMPIRE
+
+Los perfiles UMPIRE no tienen multimedia.
+- `updateUser` con `multimedia` (cualquier valor, incluso `[]`) sobre un usuario cuyo rol GUARDADO es UMPIRE -> 400
+  `VALIDATION_ERROR`, `field: "multimedia"`, `code: "FIELD_NOT_ALLOWED"`.
+- `User.multimedia` devuelve siempre `[]` para UMPIRE (y `[]` en vez de `null` para filas viejas de otros roles).
+- Migracion `20261010120200_remove_umpire_multimedia`: borra los UMPIRE que tenian multimedia (datos mock; en Supabase
+  era 1 usuario) y agrega `CHECK ("role" <> 'UMPIRE' OR "multimedia" IS NULL OR cardinality("multimedia") = 0)`
+  (`User_umpire_no_multimedia_check`, validado).
+
 ## Fecha de nacimiento y position de User
 
 ### `dateOfBirth` (`register` y `updateUser`)
@@ -44,7 +80,10 @@ En GraphQL `positionType` sigue siendo `String`. Se acepta case-insensitive ("um
 
 ### Campos nuevos en `JobOpportunity` (todos opcionales, solo con positionType UMPIRE)
 - `licenseLevelRequired: UmpireLicenseLevel` (REGIONAL | NACIONAL | INTERNACIONAL), filtro por igualdad
-- `modality: UmpireModality` (CESPED | SALA | INDOOR)
+- `modality: UmpireModality` (OUTDOOR | INDOOR). El mismo enum usa `User.modalities`. Antes era
+  CESPED | SALA | INDOOR; la migracion `20261010120100_umpire_modality_outdoor_indoor` mapea CESPED -> OUTDOOR y
+  SALA/INDOOR -> INDOOR (en el array sin duplicados). Valores viejos en filtros o en `createJobOpportunity` -> 400
+  `Invalid modality. Allowed: OUTDOOR, INDOOR` (GraphQL ya los rechaza por el enum).
 - `umpireCategory: UmpireCategory` (JUVENIL | MAYORES | MASCULINO | FEMENINO | VETERANOS)
 - `matchDate: String` (ISO 8601, DateTime en DB, indexado)
 
@@ -67,8 +106,9 @@ No existe `adminJobOpportunities`. `jobOpportunities(filters: {positionType: "UM
 para listar. `adminDashboardStats` suma `umpireJobsCount` y `umpireApplicationsCount`.
 
 ### Seed (`pnpm prisma:seed`)
-4 jobs UMPIRE (OPEN) en clubs[0] Madrid (NACIONAL/CESPED/MASCULINO), clubs[1] Barcelona (REGIONAL/SALA/JUVENIL),
-clubs[5] Buenos Aires (INTERNACIONAL/CESPED/FEMENINO), clubs[10] Rotterdam (REGIONAL/INDOOR/VETERANOS).
+4 jobs UMPIRE (OPEN) en clubs[0] Madrid (NACIONAL/OUTDOOR/MASCULINO), clubs[1] Barcelona (REGIONAL/INDOOR/JUVENIL),
+clubs[5] Buenos Aires (INTERNACIONAL/OUTDOOR/FEMENINO), clubs[10] Rotterdam (REGIONAL/INDOOR/VETERANOS).
+Paises del seed: `ES`, `AR`, `NL`.
 1 application de `umpire_garcia` al job de Madrid. Los ids son uuid generados en cada seed.
 
 ## Empleos guardados y postulaciones
@@ -160,7 +200,8 @@ Columnas: `User.avatar`, `User.coverImage`, `Club.logo`, `Club.coverImage` (Stri
 `updateUser` y `updateClub` aceptan en esos campos solo: omitido, `null`/`""` (quita la imagen, se guarda null), el valor ya guardado (URLs legacy: randomuser.me, images.unsplash.com, res.cloudinary.com) o una URL `https://res.cloudinary.com/{cloud}/image/upload/[v123/]stick-transfer/(users|clubs)/{ownerId}/...` solo con caracteres `[A-Za-z0-9._~/:-]`. Si no: `extensions.code=VALIDATION_ERROR`, `fields[0] = {field: avatar|coverImage|logo, code: IMAGE_URL_INVALID}`.
 
 ### updateClub
-Ahora acepta `logo`, `coverImage`, `city`, `country`. `city`/`country` null = sin cambio; vacio = 400.
+Ahora acepta `logo`, `coverImage`, `city`, `country`. `city`/`country` null = sin cambio; vacio = 400 (`country` debe
+ser un codigo, ver "Paises").
 
 ### Legacy base64 (deprecadas, no se borran)
 `uploadAvatar`, `uploadCoverImage`, `uploadClubLogo`, `uploadClubCoverImage` siguen funcionando pero exigen `data:image/(jpeg|png|webp);base64,` (si no: `IMAGE_FORMAT_INVALID`). Nadie del front las usa.

@@ -77,12 +77,56 @@ describe("JobsService", () => {
     it("should pass filters to Prisma where clause", async () => {
       prisma.jobOpportunity.findMany.mockResolvedValue([]);
 
-      await service.findAll({ country: "Spain", clubId: "club-1", status: "OPEN" });
+      await service.findAll({ country: "ES", clubId: "club-1", status: "OPEN" });
 
       const callWhere = prisma.jobOpportunity.findMany.mock.calls[0][0].where;
-      expect(callWhere.country).toBe("Spain");
+      expect(callWhere.country).toEqual({ in: ["ES"] });
       expect(callWhere.clubId).toBe("club-1");
       expect(callWhere.status).toBe("OPEN");
+    });
+
+    it("filters by country code case-insensitively: 'ar' finds 'AR'", async () => {
+      prisma.jobOpportunity.findMany.mockResolvedValue([]);
+
+      await service.findAll({ country: " ar " });
+
+      expect(prisma.jobOpportunity.findMany.mock.calls[0][0].where.country).toEqual({
+        in: ["AR"],
+      });
+    });
+
+    it("an unknown country filter matches nothing instead of failing", async () => {
+      prisma.jobOpportunity.findMany.mockResolvedValue([]);
+
+      await service.findAll({ country: "Argentina" });
+
+      expect(prisma.jobOpportunity.findMany.mock.calls[0][0].where.country).toEqual({
+        in: [],
+      });
+    });
+  });
+
+  describe("create - country", () => {
+    const base = {
+      title: "t", description: "d", positionType: "PLAYER", level: "PROFESSIONAL",
+      clubId: "club-1", city: "BA",
+    };
+
+    it("stores the normalized country code", async () => {
+      prisma.jobOpportunity.count.mockResolvedValue(0);
+      prisma.jobOpportunity.create.mockResolvedValue({ id: "job-1" });
+
+      await service.create({ ...base, country: "ar" });
+
+      expect(prisma.jobOpportunity.create.mock.calls[0][0].data.country).toBe("AR");
+    });
+
+    it("rejects a country that is not a code with COUNTRY_INVALID", async () => {
+      await expect(service.create({ ...base, country: "Argentina" })).rejects.toMatchObject({
+        code: "VALIDATION_ERROR",
+        fields: [expect.objectContaining({ field: "country", code: "COUNTRY_INVALID" })],
+      });
+      expect(prisma.jobOpportunity.create).not.toHaveBeenCalled();
     });
   });
 
@@ -172,7 +216,7 @@ describe("JobsService", () => {
         positionType: "PLAYER",
         level: "PROFESSIONAL",
         clubId: "club-1",
-        country: "Spain",
+        country: "ES",
         city: "Barcelona",
         salary: 3000,
         currency: "EUR",
@@ -199,7 +243,7 @@ describe("JobsService", () => {
         positionType: "PLAYER",
         level: "PROFESSIONAL",
         clubId: "club-1",
-        country: "Spain",
+        country: "ES",
         city: "Barcelona",
       };
       prisma.jobOpportunity.count.mockResolvedValue(5);
@@ -721,10 +765,10 @@ describe("JobsService", () => {
       positionType: "umpire",
       level: "PROFESSIONAL",
       clubId: "club-1",
-      country: "Spain",
+      country: "ES",
       city: "Madrid",
       licenseLevelRequired: "NACIONAL",
-      modality: "CESPED",
+      modality: "OUTDOOR",
       umpireCategory: "MASCULINO",
       matchDate: "2026-11-15T10:00:00.000Z",
     };
@@ -738,7 +782,7 @@ describe("JobsService", () => {
       const data = prisma.jobOpportunity.create.mock.calls[0][0].data;
       expect(data.positionType).toBe("UMPIRE");
       expect(data.licenseLevelRequired).toBe("NACIONAL");
-      expect(data.modality).toBe("CESPED");
+      expect(data.modality).toBe("OUTDOOR");
       expect(data.umpireCategory).toBe("MASCULINO");
       expect(data.matchDate).toEqual(new Date("2026-11-15T10:00:00.000Z"));
     });
@@ -782,13 +826,29 @@ describe("JobsService", () => {
       );
     });
 
+    it.each([["CESPED"], ["SALA"], ["grass"]])(
+      "findAll rejects the legacy/unknown modality %p with a 400",
+      async (modality) => {
+        await expect(service.findAll({ modality })).rejects.toThrow(
+          new BadRequestException("Invalid modality. Allowed: OUTDOOR, INDOOR"),
+        );
+      },
+    );
+
+    it("create rejects a legacy modality with a 400", async () => {
+      await expect(service.create({ ...umpireInput, modality: "CESPED" })).rejects.toThrow(
+        new BadRequestException("Invalid modality. Allowed: OUTDOOR, INDOOR"),
+      );
+      expect(prisma.jobOpportunity.create).not.toHaveBeenCalled();
+    });
+
     it("findAll applies umpire filters and matchDate range", async () => {
       prisma.jobOpportunity.findMany.mockResolvedValue([]);
 
       await service.findAll({
         positionType: "UMPIRE",
         licenseLevelRequired: "REGIONAL",
-        modality: "SALA",
+        modality: "indoor",
         umpireCategory: "JUVENIL",
         matchDateFrom: "2026-11-01",
         matchDateTo: "2026-12-01",
@@ -796,7 +856,7 @@ describe("JobsService", () => {
 
       const where = prisma.jobOpportunity.findMany.mock.calls[0][0].where;
       expect(where.licenseLevelRequired).toBe("REGIONAL");
-      expect(where.modality).toBe("SALA");
+      expect(where.modality).toBe("INDOOR");
       expect(where.umpireCategory).toBe("JUVENIL");
       expect(where.matchDate).toEqual({
         gte: new Date("2026-11-01"),

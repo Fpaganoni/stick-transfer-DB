@@ -25,6 +25,7 @@ import { GqlAuthGuard } from "../auth/gql-auth.guard";
 import { Throttle } from "@nestjs/throttler";
 import { AppError, FieldError } from "../common/errors/app.error";
 import { mapUniqueViolation } from "../common/errors/unique-violation";
+import { checkCountry, normalizeCountry } from "../common/geo/countries";
 import {
   checkDateOfBirth,
   checkEmail,
@@ -162,7 +163,11 @@ export class UsersResolver {
       ? resolvePosition(normalizedRole ?? "PLAYER", position)
       : { position: undefined, error: null };
     if (resolvedPosition.error) roleErrors.push(resolvedPosition.error);
+    // A missing CLUB country is already FIELD_REQUIRED; only check what was sent.
+    const countryError = country ? checkCountry(country) : null;
+    if (countryError) roleErrors.push(countryError);
     if (roleErrors.length) throw AppError.validation(roleErrors);
+    const countryCode = normalizeCountry(country) ?? undefined;
 
     if (await this.usersService.isEmailTaken(email)) throw AppError.emailTaken();
     if (username && (await this.usersService.isUsernameTaken(username))) {
@@ -176,7 +181,7 @@ export class UsersResolver {
         username,
         password,
         role: normalizedRole,
-        country,
+        country: countryCode,
         city,
         position: resolvedPosition.position,
         dateOfBirth,
@@ -187,7 +192,7 @@ export class UsersResolver {
           userId: user.id,
           name: clubName,
           city: city!,
-          country: country!,
+          country: countryCode!,
           managedByFirstName: managedByFirstName!,
           managedByLastName: managedByLastName!,
         });
@@ -380,16 +385,29 @@ export class UsersResolver {
     const profileErrors: FieldError[] = [];
     const dateOfBirthError = checkDateOfBirth(dateOfBirth);
     if (dateOfBirthError) profileErrors.push(dateOfBirthError);
+    // undefined = untouched, null = clear, anything else must be a country code
+    const countryError = checkCountry(country);
+    if (countryError) profileErrors.push(countryError);
 
-    // Only PLAYER stores a position: judge by the stored role, not the caller's
-    // (an admin may edit someone else). Skip the lookup when it is not sent.
+    // position (PLAYER only) and multimedia (never UMPIRE) are judged by the
+    // stored role, not the caller's (an admin may edit someone else). Skip the
+    // lookup when neither is sent.
     let resolvedPosition: string | null | undefined;
-    if (position !== undefined) {
+    if (position !== undefined || multimedia !== undefined) {
       const target = await this.usersService.findById(id);
       if (!target) throw new NotFoundException("User not found");
-      const result = resolvePosition(target.role, position);
-      if (result.error) profileErrors.push(result.error);
-      resolvedPosition = result.position;
+      if (position !== undefined) {
+        const result = resolvePosition(target.role, position);
+        if (result.error) profileErrors.push(result.error);
+        resolvedPosition = result.position;
+      }
+      if (multimedia !== undefined && target.role === "UMPIRE") {
+        profileErrors.push({
+          field: "multimedia",
+          code: "FIELD_NOT_ALLOWED",
+          message: "Umpire profiles cannot have multimedia",
+        });
+      }
     }
     if (profileErrors.length) throw AppError.validation(profileErrors);
 
@@ -407,7 +425,7 @@ export class UsersResolver {
         coverImage,
         coverImagePosition,
         position: resolvedPosition,
-        country,
+        country: country == null ? country : normalizeCountry(country),
         city,
         clubId,
         yearsOfExperience,
@@ -441,6 +459,13 @@ export class UsersResolver {
       include: { club: true },
       orderBy: { order: "asc" },
     });
+  }
+
+  /** UMPIRE profiles have no multimedia; NULL (legacy rows) reads as []. */
+  @ResolveField()
+  multimedia(@Parent() user: any): string[] {
+    if (user.role === "UMPIRE") return [];
+    return user.multimedia ?? [];
   }
 
   @ResolveField()

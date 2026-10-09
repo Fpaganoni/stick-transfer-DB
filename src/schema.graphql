@@ -20,8 +20,7 @@ enum TravelAvailability {
 }
 
 enum UmpireModality {
-  CESPED
-  SALA
+  OUTDOOR
   INDOOR
 }
 
@@ -62,12 +61,14 @@ type User {
   bio: String
   position: String
   role: Role!
+  """ISO 3166-1 alpha-2 code ("AR", "ES") or GB-ENG | GB-SCT | GB-WLS."""
   country: String
   city: String
   clubId: String
   club: Club
   yearsOfExperience: Int
   cvUrl: String
+  """Always empty for UMPIRE."""
   multimedia: [String!]!
   dateOfBirth: String
   level: UserLevel
@@ -437,6 +438,7 @@ type ApplicationWithUser {
 }
 
 input JobOpportunityFiltersInput {
+  # Country code in any case ("ar" matches "AR"); an unknown value matches nothing.
   country: String
   positionType: String
   level: String
@@ -558,6 +560,7 @@ type Query {
   # Explore
   exploreUsers(
     role: String
+    # Country code in any case ("ar" matches "AR"); an unknown value matches nothing.
     country: String
     position: String
     level: String
@@ -570,6 +573,7 @@ type Query {
     offset: Int
   ): [User!]!
   exploreClubs(
+    # Country code in any case ("ar" matches "AR"); an unknown value matches nothing.
     country: String
     league: String
     search: String
@@ -589,6 +593,9 @@ type Mutation {
     username: String
     password: String!
     role: String
+    # ISO 3166-1 alpha-2 code in any case ("ar" is stored as "AR") or
+    # GB-ENG | GB-SCT | GB-WLS; anything else is 400 VALIDATION_ERROR,
+    # field country, code COUNTRY_INVALID. Same rule wherever country is input.
     country: String
     city: String
     # Only PLAYER stores a position: goalkeeper | defender | midfielder | attacker
@@ -622,10 +629,13 @@ type Mutation {
     # (goalkeeper | defender | midfielder | attacker, else POSITION_INVALID);
     # for any other role it is ignored and stored as null.
     position: String
+    # Country code (see register); null clears it.
     country: String
     city: String
     clubId: ID
     yearsOfExperience: Int
+    # Not allowed for UMPIRE (any value, even []): VALIDATION_ERROR,
+    # field multimedia, code FIELD_NOT_ALLOWED.
     multimedia: [String!]
     cvUrl: String
     # Strict YYYY-MM-DD (UTC), 16 to 100 years old. Same codes as register.

@@ -1,5 +1,7 @@
 import { Injectable } from "@nestjs/common";
+import { UmpireModality } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
+import { countryFilter } from "../common/geo/countries";
 
 export interface ExploreFilters {
   role?: string;
@@ -65,9 +67,9 @@ export class ExploreService {
       where.role = { in: ["PLAYER", "COACH"] };
     }
 
-    // Country filter (exact match — 2-letter ISO code e.g. 'AR', 'US')
+    // Country filter: equality on the normalized code ('ar' -> 'AR'); unknown -> no results
     if (country) {
-      where.country = country;
+      where.country = countryFilter(country);
     }
 
     // Position filter (free-text, case-insensitive partial match)
@@ -111,7 +113,7 @@ export class ExploreService {
     if (modality) {
       where.role = "UMPIRE";
       where.modalities = {
-        has: this.parseEnum(modality, "modality", ["CESPED", "SALA", "INDOOR"]),
+        has: this.parseEnum(modality, "modality", Object.values(UmpireModality)),
       };
     }
     if (umpireCategory) {
@@ -166,9 +168,9 @@ export class ExploreService {
 
     const where: any = {};
 
-    // Country filter
+    // Country filter: equality on the normalized code ('es' -> 'ES'); unknown -> no results
     if (country) {
-      where.country = country;
+      where.country = countryFilter(country);
     }
 
     // League filter

@@ -1,4 +1,4 @@
-import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { UsersResolver } from "./users.resolver";
 
 describe("UsersResolver - authorization", () => {
@@ -176,6 +176,95 @@ describe("UsersResolver - authorization", () => {
         await update({});
         expect(usersService.findById).not.toHaveBeenCalled();
       });
+    });
+
+    describe("country and multimedia", () => {
+      // Positional args after ctx/id: position #8, country #9, multimedia #13.
+      const COUNTRY_ARG = 9;
+      const MULTIMEDIA_ARG = 13;
+      const update = (opts: { country?: string | null; multimedia?: string[] }) => {
+        const args: unknown[] = [ctx, "u1"];
+        args[COUNTRY_ARG] = opts.country;
+        args[MULTIMEDIA_ARG] = opts.multimedia;
+        return (resolver as any).updateUser(...args);
+      };
+      const fieldsOf = async (p: Promise<unknown>) => {
+        try {
+          await p;
+        } catch (e: any) {
+          return e.fields as { field: string; code: string }[];
+        }
+        throw new Error("expected rejection");
+      };
+
+      beforeEach(() => asUser("u1"));
+
+      it("stores the normalized country code", async () => {
+        await update({ country: "es" });
+        expect(usersService.updateUser).toHaveBeenCalledWith(
+          "u1",
+          expect.objectContaining({ country: "ES" }),
+        );
+      });
+
+      it("null clears the country, undefined leaves it untouched", async () => {
+        await update({ country: null });
+        expect(usersService.updateUser.mock.calls[0][1].country).toBeNull();
+        await update({});
+        expect(usersService.updateUser.mock.calls[1][1].country).toBeUndefined();
+      });
+
+      it.each([["Spain"], [""], ["🇪🇸"]])("rejects country %p with COUNTRY_INVALID", async (country) => {
+        const fields = await fieldsOf(update({ country }));
+        expect(fields).toEqual([expect.objectContaining({ field: "country", code: "COUNTRY_INVALID" })]);
+        expect(usersService.updateUser).not.toHaveBeenCalled();
+      });
+
+      it("keeps multimedia for a non-UMPIRE", async () => {
+        await update({ multimedia: ["https://video"] });
+        expect(usersService.updateUser).toHaveBeenCalledWith(
+          "u1",
+          expect.objectContaining({ multimedia: ["https://video"] }),
+        );
+      });
+
+      it.each([[["https://video"]], [[]]])(
+        "rejects multimedia %p for a stored UMPIRE with FIELD_NOT_ALLOWED",
+        async (multimedia) => {
+          usersService.findById.mockResolvedValue({ id: "u1", role: "UMPIRE" });
+          const fields = await fieldsOf(update({ multimedia }));
+          expect(fields).toEqual([
+            expect.objectContaining({ field: "multimedia", code: "FIELD_NOT_ALLOWED" }),
+          ]);
+          expect(usersService.updateUser).not.toHaveBeenCalled();
+        },
+      );
+
+      it("fails with NotFound when only multimedia is sent for a missing user", async () => {
+        usersService.findById.mockResolvedValue(null);
+        await expect(update({ multimedia: ["https://video"] })).rejects.toThrow(NotFoundException);
+        expect(usersService.updateUser).not.toHaveBeenCalled();
+      });
+
+      it("judges multimedia by the stored role when an admin edits an umpire", async () => {
+        asUser("admin", "SUPERADMIN");
+        usersService.findById.mockResolvedValue({ id: "u1", role: "UMPIRE" });
+        const fields = await fieldsOf(update({ multimedia: ["https://video"] }));
+        expect(fields[0]).toMatchObject({ field: "multimedia", code: "FIELD_NOT_ALLOWED" });
+      });
+    });
+  });
+
+  describe("multimedia field", () => {
+    it("is always empty for an UMPIRE", () => {
+      expect(resolver.multimedia({ role: "UMPIRE", multimedia: ["https://video"] })).toEqual([]);
+    });
+
+    it("returns the stored list for other roles, [] when NULL", () => {
+      expect(resolver.multimedia({ role: "PLAYER", multimedia: ["https://video"] })).toEqual([
+        "https://video",
+      ]);
+      expect(resolver.multimedia({ role: "PLAYER", multimedia: null })).toEqual([]);
     });
   });
 

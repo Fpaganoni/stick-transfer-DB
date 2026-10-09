@@ -22,11 +22,13 @@ model User {
   bio                String?
   position           String?
   role               Role                @default(PLAYER)
+  /// ISO 3166-1 alpha-2 or GB-ENG|GB-SCT|GB-WLS (src/common/geo/countries.ts, DB CHECK).
   country            String?
   city               String?
   clubId             String?
   yearsOfExperience  Int?
   cvUrl              String?
+  /// Always empty for UMPIRE (DB CHECK User_umpire_no_multimedia_check).
   multimedia         String[]
   dateOfBirth        DateTime?
   level              UserLevel?
@@ -520,8 +522,7 @@ enum TravelAvailability {
 }
 
 enum UmpireModality {
-  CESPED
-  SALA
+  OUTDOOR
   INDOOR
 }
 

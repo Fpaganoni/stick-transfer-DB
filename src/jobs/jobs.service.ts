@@ -6,13 +6,16 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { EventEmitter2 } from "@nestjs/event-emitter";
-import { NotificationType, Prisma } from "@prisma/client";
+import { NotificationType, Prisma, UmpireModality } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { normalizePagination } from "../common/pagination";
+import { AppError } from "../common/errors/app.error";
+import { checkCountry, countryFilter, normalizeCountry } from "../common/geo/countries";
 
 export type JobActor = { userId: string; role: string };
 
 export const POSITION_TYPES = ["PLAYER", "COACH", "STAFF", "UMPIRE", "OTHER"];
+const UMPIRE_MODALITIES: string[] = Object.values(UmpireModality);
 
 const ALREADY_APPLIED_MESSAGE = "You have already applied for this job";
 
@@ -60,6 +63,17 @@ export class JobsService {
     return value;
   }
 
+  /** Case-insensitive; legacy CESPED/SALA and unknown values are a 400. */
+  private parseModality(raw: string): string {
+    const value = String(raw).trim().toUpperCase();
+    if (!UMPIRE_MODALITIES.includes(value)) {
+      throw new BadRequestException(
+        `Invalid modality. Allowed: ${UMPIRE_MODALITIES.join(", ")}`,
+      );
+    }
+    return value;
+  }
+
   private parseDate(raw: string, label: string): Date {
     const d = new Date(raw);
     if (isNaN(d.getTime())) {
@@ -89,7 +103,7 @@ export class JobsService {
     limit?: number,
   ) {
     const where: any = {};
-    if (filters?.country) where.country = filters.country;
+    if (filters?.country) where.country = countryFilter(filters.country);
     if (filters?.positionType) {
       where.positionType = this.parsePositionType(filters.positionType) as any;
     }
@@ -104,7 +118,7 @@ export class JobsService {
     if (filters?.licenseLevelRequired) {
       where.licenseLevelRequired = filters.licenseLevelRequired as any;
     }
-    if (filters?.modality) where.modality = filters.modality as any;
+    if (filters?.modality) where.modality = this.parseModality(filters.modality);
     if (filters?.umpireCategory) where.umpireCategory = filters.umpireCategory as any;
     if (filters?.matchDateFrom || filters?.matchDateTo) {
       where.matchDate = {
@@ -167,6 +181,9 @@ export class JobsService {
     if (data.salary != null && data.salary < 0) {
       throw new BadRequestException("salary cannot be negative");
     }
+    // country is required (non-null in the SDL), so a blank value is invalid too
+    const countryError = checkCountry(data.country ?? "");
+    if (countryError) throw AppError.validation([countryError]);
 
     const positionType = this.parsePositionType(data.positionType);
     if (
@@ -183,6 +200,7 @@ export class JobsService {
     const matchDate = data.matchDate
       ? this.parseDate(data.matchDate, "matchDate")
       : undefined;
+    const modality = data.modality ? this.parseModality(data.modality) : undefined;
 
     const activeJobsCount = await this.prisma.jobOpportunity.count({
       where: { clubId: data.clubId, status: "OPEN" },
@@ -196,12 +214,13 @@ export class JobsService {
     return this.prisma.jobOpportunity.create({
       data: {
         ...data,
+        country: normalizeCountry(data.country),
         positionType: positionType as any,
         level: data.level as any,
         currency: data.currency as any,
         gender: data.gender as any,
         licenseLevelRequired: data.licenseLevelRequired as any,
-        modality: data.modality as any,
+        modality: modality as any,
         umpireCategory: data.umpireCategory as any,
         matchDate,
         expiresAt: data.expiresAt ? new Date(data.expiresAt) : undefined,

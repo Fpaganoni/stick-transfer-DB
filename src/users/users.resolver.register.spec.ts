@@ -162,6 +162,48 @@ describe("UsersResolver - register/login/availability", () => {
     });
   });
 
+  describe("register - country", () => {
+    const registerWith = (role: string | undefined, country?: string, clubFields = false) =>
+      resolver.register(
+        ctx, "a@b.com", "Ana", undefined, STRONG, role, country, clubFields ? "Madrid" : undefined,
+        undefined, undefined,
+        clubFields ? "Club" : undefined, clubFields ? "Ana" : undefined, clubFields ? "Lopez" : undefined,
+      );
+
+    it("stores the normalized code ('ar' -> 'AR')", async () => {
+      await registerWith("PLAYER", " ar ");
+      expect(usersService.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ country: "AR" }),
+      );
+    });
+
+    it("leaves country undefined when not sent", async () => {
+      await registerWith("PLAYER");
+      expect(usersService.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ country: undefined }),
+      );
+    });
+
+    it("rejects a non-code country with COUNTRY_INVALID and never touches the DB", async () => {
+      const err = await codeOf(registerWith("PLAYER", "Argentina"));
+      expect(err.code).toBe("VALIDATION_ERROR");
+      expect(err.fields).toEqual([expect.objectContaining({ field: "country", code: "COUNTRY_INVALID" })]);
+      expect(usersService.isEmailTaken).not.toHaveBeenCalled();
+      expect(usersService.createUser).not.toHaveBeenCalled();
+    });
+
+    it("creates a CLUB's club profile with the normalized code", async () => {
+      const clubsService = { create: jest.fn().mockResolvedValue({}) };
+      resolver = new UsersResolver(
+        usersService, authService, {} as any, {} as any, clubsService as any, {} as any,
+      );
+      await registerWith("CLUB", "gb-eng", true);
+      expect(clubsService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ country: "GB-ENG" }),
+      );
+    });
+  });
+
   describe("login", () => {
     it("throws INVALID_CREDENTIALS (401) when validateUser returns null", async () => {
       authService.validateUser.mockResolvedValue(null);

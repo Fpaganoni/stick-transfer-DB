@@ -79,12 +79,12 @@ describe("ClubsService", () => {
         userId: "user-1",
         name: "HC Madrid",
         city: "Madrid",
-        country: "Spain",
+        country: "ES",
         managedByFirstName: "Juan",
         managedByLastName: "Perez",
       };
       const mockUser = { id: "user-1", name: "HC Madrid User", role: "CLUB" };
-      const mockClub = { id: "user-1", name: "HC Madrid", city: "Madrid", country: "Spain" };
+      const mockClub = { id: "user-1", name: "HC Madrid", city: "Madrid", country: "ES" };
 
       prisma.user.findUnique.mockResolvedValue(mockUser);
       prisma.club.findUnique.mockResolvedValue(null); // no existing club profile
@@ -118,7 +118,7 @@ describe("ClubsService", () => {
         userId: "user-2",
         name: "HC Valencia",
         city: "Valencia",
-        country: "Spain",
+        country: "ES",
         managedByFirstName: "Juan",
         managedByLastName: "Perez",
       };
@@ -134,7 +134,7 @@ describe("ClubsService", () => {
         userId: "user-3",
         name: "HC Sevilla",
         city: "Sevilla",
-        country: "Spain",
+        country: "ES",
         managedByFirstName: "Juan",
         managedByLastName: "Perez",
       };
@@ -151,7 +151,7 @@ describe("ClubsService", () => {
         userId: "user-4",
         name: "HC Bilbao",
         city: "Bilbao",
-        country: "Spain",
+        country: "ES",
         managedByFirstName: "Juan",
         managedByLastName: "Perez",
       };
@@ -171,6 +171,39 @@ describe("ClubsService", () => {
         type: "CLUB_PENDING_VERIFICATION",
         entityId: "user-4",
       });
+    });
+
+    describe("country", () => {
+      const input = {
+        userId: "user-5",
+        name: "HC Lomas",
+        city: "Lomas",
+        managedByFirstName: "Juan",
+        managedByLastName: "Perez",
+      };
+
+      it("stores the normalized code", async () => {
+        prisma.user.findUnique.mockResolvedValue({ id: "user-5", name: "Lomas", role: "CLUB" });
+        prisma.club.findUnique.mockResolvedValue(null);
+        prisma.club.create.mockResolvedValue({ id: "user-5" });
+        prisma.user.findMany.mockResolvedValue([]);
+
+        await service.create({ ...input, country: " ar " });
+
+        expect(prisma.club.create.mock.calls[0][0].data.country).toBe("AR");
+      });
+
+      it.each([["Argentina"], [""], ["🇦🇷 Argentina"]])(
+        "rejects %p with COUNTRY_INVALID before touching the DB",
+        async (country) => {
+          await expect(service.create({ ...input, country })).rejects.toMatchObject({
+            code: "VALIDATION_ERROR",
+            fields: [expect.objectContaining({ field: "country", code: "COUNTRY_INVALID" })],
+          });
+          expect(prisma.user.findUnique).not.toHaveBeenCalled();
+          expect(prisma.club.create).not.toHaveBeenCalled();
+        },
+      );
     });
   });
 
@@ -317,12 +350,23 @@ describe("ClubsService", () => {
       );
     });
 
-    it("saves city and country", async () => {
-      await service.updateClub("club-1", { city: "Madrid", country: "Spain" });
+    it("saves city and the normalized country code", async () => {
+      await service.updateClub("club-1", { city: "Madrid", country: "es" });
       expect(updatedData()).toEqual(
-        expect.objectContaining({ city: "Madrid", country: "Spain" }),
+        expect.objectContaining({ city: "Madrid", country: "ES" }),
       );
     });
+
+    it.each([["Spain"], [""], ["   "]])(
+      "rejects country %p with COUNTRY_INVALID",
+      async (country) => {
+        await expect(service.updateClub("club-1", { country })).rejects.toMatchObject({
+          code: "VALIDATION_ERROR",
+          fields: [expect.objectContaining({ field: "country", code: "COUNTRY_INVALID" })],
+        });
+        expect(prisma.club.update).not.toHaveBeenCalled();
+      },
+    );
 
     it.each(["", "   "])("rejects a blank city %p with 400", async (city) => {
       await expect(service.updateClub("club-1", { city })).rejects.toThrow(

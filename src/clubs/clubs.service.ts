@@ -8,6 +8,15 @@ import { EventEmitter2 } from "@nestjs/event-emitter";
 import { NotificationType, VerificationStatus } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { resolveOwnedImages } from "../uploads/image-url";
+import { AppError } from "../common/errors/app.error";
+import { checkCountry, normalizeCountry } from "../common/geo/countries";
+
+/** Club.country is NOT NULL, so a blank value is invalid too. 400 COUNTRY_INVALID. */
+function requireCountryCode(country: string): string {
+  const error = checkCountry(country ?? "");
+  if (error) throw AppError.validation([error]);
+  return normalizeCountry(country)!;
+}
 
 @Injectable()
 export class ClubsService {
@@ -101,6 +110,7 @@ export class ClubsService {
     facebook?: string;
     tiktok?: string;
   }) {
+    const country = requireCountryCode(data.country);
     const user = await this.prisma.user.findUnique({
       where: { id: data.userId },
     });
@@ -126,7 +136,7 @@ export class ClubsService {
         id: data.userId,
         name: data.name,
         city: data.city,
-        country: data.country,
+        country,
         managedByFirstName: data.managedByFirstName,
         managedByLastName: data.managedByLastName,
         benefits: data.benefits || [],
@@ -287,11 +297,10 @@ export class ClubsService {
 
     // city and country are required columns: null means "unchanged", blank is an error
     const { city, country, logo, coverImage, ...rest } = data;
-    for (const [name, value] of [["city", city], ["country", country]] as const) {
-      if (value != null && !value.trim()) {
-        throw new BadRequestException(`${name} cannot be empty`);
-      }
+    if (city != null && !city.trim()) {
+      throw new BadRequestException("city cannot be empty");
     }
+    const countryCode = country != null ? requireCountryCode(country) : undefined;
 
     const images = await this.validatedImages(id, { logo, coverImage });
 
@@ -301,7 +310,7 @@ export class ClubsService {
         ...rest,
         ...images,
         ...(city != null && { city: city.trim() }),
-        ...(country != null && { country: country.trim() }),
+        ...(countryCode && { country: countryCode }),
       },
       include: { user: true },
     });
