@@ -1,5 +1,10 @@
 import { BadRequestException } from "@nestjs/common";
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, normalizePagination } from "./pagination";
+import {
+  DEFAULT_PAGE_SIZE,
+  MAX_PAGE_SIZE,
+  normalizeOffsetPagination,
+  normalizePagination,
+} from "./pagination";
 
 describe("normalizePagination", () => {
   it("defaults to the first page with the default size", () => {
@@ -41,4 +46,34 @@ describe("normalizePagination", () => {
   it.each([0, -3, 2.5, Number.NaN])("rejects an invalid page (%p) with a 400", (page) => {
     expect(() => normalizePagination(page, 10)).toThrow(BadRequestException);
   });
+});
+
+describe("normalizeOffsetPagination", () => {
+  it("defaults to offset 0 with the default size", () => {
+    expect(normalizeOffsetPagination()).toEqual({ skip: 0, take: DEFAULT_PAGE_SIZE });
+    expect(normalizeOffsetPagination(null, null)).toEqual({ skip: 0, take: DEFAULT_PAGE_SIZE });
+  });
+
+  it("passes limit and offset through", () => {
+    expect(normalizeOffsetPagination(20, 40)).toEqual({ skip: 40, take: 20 });
+  });
+
+  it("accepts the maximum page size", () => {
+    expect(normalizeOffsetPagination(MAX_PAGE_SIZE, 0)).toEqual({ skip: 0, take: MAX_PAGE_SIZE });
+  });
+
+  it("rejects a limit above the maximum", () => {
+    expect(() => normalizeOffsetPagination(MAX_PAGE_SIZE + 1)).toThrow(BadRequestException);
+  });
+
+  it.each([0, -1, 1.5, Number.NaN])("rejects an invalid limit (%p) with a 400", (limit) => {
+    expect(() => normalizeOffsetPagination(limit, 0)).toThrow(BadRequestException);
+  });
+
+  it.each([-1, 2.5, Number.NaN, 2_147_483_648])(
+    "rejects an invalid offset (%p) with a 400",
+    (offset) => {
+      expect(() => normalizeOffsetPagination(10, offset)).toThrow(BadRequestException);
+    },
+  );
 });

@@ -96,8 +96,17 @@ type User {
   likesReceivedCount: Int!
   isFollowedByCurrentUser: Boolean!
   isLikedByCurrentUser: Boolean!
-  followers: [UserBasicInfo!]!
-  following: [UserBasicInfo!]!
+  """
+  Users and clubs following this user, newest first. A club is listed as its owner
+  User (same id) with the club logo as avatar. limit 1..100 (default 50), offset >= 0
+  (default 0); anything else is a 400. followersCount is the total, not the page size.
+  """
+  followers(limit: Int, offset: Int): [UserBasicInfo!]!
+  """
+  Users and clubs this user follows, newest first, same shape and paging as followers.
+  followingCount is the total, not the page size.
+  """
+  following(limit: Int, offset: Int): [UserBasicInfo!]!
 }
 
 type UserBasicInfo {
@@ -541,8 +550,9 @@ type Query {
   ): [ApplicationWithUser!]!
 
   # Follows & Likes
-  followers(entityType: FollowEntityType!, entityId: ID!): [Follow!]!
-  following(entityType: FollowEntityType!, entityId: ID!): [Follow!]!
+  # Same shape and paging as User.followers / User.following.
+  followers(entityType: FollowEntityType!, entityId: ID!, limit: Int, offset: Int): [UserBasicInfo!]!
+  following(entityType: FollowEntityType!, entityId: ID!, limit: Int, offset: Int): [UserBasicInfo!]!
   profileLikes(entityType: LikeEntityType!, entityId: ID!): [Like!]!
   likesGiven(entityType: LikeEntityType!, entityId: ID!): [Like!]!
 

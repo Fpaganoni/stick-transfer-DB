@@ -5,10 +5,44 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { EventEmitter2 } from "@nestjs/event-emitter";
-import { NotificationType } from "@prisma/client";
+import { NotificationType, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
+import { normalizeOffsetPagination } from "../common/pagination";
 
 type EntityType = "USER" | "CLUB";
+
+export interface OffsetPagination {
+  limit?: number | null;
+  offset?: number | null;
+}
+
+export interface UserBasicInfo {
+  id: string;
+  name: string;
+  username: string | null;
+  avatar: string | null;
+}
+
+const USER_BASIC_SELECT = { id: true, name: true, username: true, avatar: true } as const;
+
+/** Newest first; id breaks createdAt ties so offset pages never repeat or drop rows. */
+const FOLLOW_ORDER: Prisma.FollowOrderByWithRelationInput[] = [
+  { createdAt: "desc" },
+  { id: "desc" },
+];
+
+/**
+ * A club is listed as the User that owns it (same id), showing the club logo
+ * as avatar when it has one.
+ */
+function toBasicInfo(user: UserBasicInfo, clubLogo?: string | null): UserBasicInfo {
+  return {
+    id: user.id,
+    name: user.name,
+    username: user.username,
+    avatar: clubLogo ?? user.avatar,
+  };
+}
 
 @Injectable()
 export class SocialService {
@@ -105,26 +139,58 @@ export class SocialService {
     return count > 0;
   }
 
-  async getFollowers(entityType: EntityType, entityId: string) {
+  /**
+   * Users and clubs following the entity, newest first. followerId always points
+   * at a User (a club shares its owner's id), so one include covers both types.
+   */
+  async getFollowers(
+    entityType: EntityType,
+    entityId: string,
+    pagination: OffsetPagination = {},
+  ): Promise<UserBasicInfo[]> {
+    const { skip, take } = normalizeOffsetPagination(pagination.limit, pagination.offset);
     const follows = await this.prisma.follow.findMany({
       where: { followingType: entityType, followingId: entityId },
-      orderBy: { createdAt: "desc" },
+      orderBy: FOLLOW_ORDER,
+      skip,
+      take,
       include: {
-        followerUser: { select: { id: true, name: true, username: true, avatar: true } },
+        followerUser: {
+          select: { ...USER_BASIC_SELECT, clubProfile: { select: { logo: true } } },
+        },
       },
     });
-    return follows.map((f) => f.followerUser).filter(Boolean);
+    return follows.flatMap(({ followerType, followerUser }) => {
+      if (!followerUser) return [];
+      const clubLogo = followerType === "CLUB" ? followerUser.clubProfile?.logo : null;
+      return [toBasicInfo(followerUser, clubLogo)];
+    });
   }
 
-  async getFollowing(entityType: EntityType, entityId: string) {
+  /**
+   * Users and clubs the entity follows, newest first, so the list matches
+   * countFollowing. Followed clubs resolve to their owner User in the same query.
+   */
+  async getFollowing(
+    entityType: EntityType,
+    entityId: string,
+    pagination: OffsetPagination = {},
+  ): Promise<UserBasicInfo[]> {
+    const { skip, take } = normalizeOffsetPagination(pagination.limit, pagination.offset);
     const follows = await this.prisma.follow.findMany({
       where: { followerType: entityType, followerId: entityId },
-      orderBy: { createdAt: "desc" },
+      orderBy: FOLLOW_ORDER,
+      skip,
+      take,
       include: {
-        followedUser: { select: { id: true, name: true, username: true, avatar: true } },
+        followedUser: { select: USER_BASIC_SELECT },
+        followedClub: { select: { logo: true, user: { select: USER_BASIC_SELECT } } },
       },
     });
-    return follows.map((f) => f.followedUser).filter(Boolean);
+    return follows.flatMap(({ followedUser, followedClub }) => {
+      if (followedClub) return [toBasicInfo(followedClub.user, followedClub.logo)];
+      return followedUser ? [toBasicInfo(followedUser)] : [];
+    });
   }
 
   // ─── Likes ─────────────────────────────────────────────────────────────

@@ -36,3 +36,19 @@ export function normalizePagination(
   }
   return { skip, take };
 }
+
+/**
+ * Same limit rules as normalizePagination, for lists exposed as limit/offset.
+ * Missing offset starts at 0; it must be an integer within the database skip range.
+ */
+export function normalizeOffsetPagination(
+  limit?: number | null,
+  offset?: number | null,
+): { skip: number; take: number } {
+  const { take } = normalizePagination(null, limit);
+  const skip = offset ?? 0;
+  if (!Number.isInteger(skip) || skip < 0 || skip > MAX_SKIP) {
+    throw new BadRequestException(`offset must be an integer between 0 and ${MAX_SKIP}`);
+  }
+  return { skip, take };
+}

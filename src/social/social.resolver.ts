@@ -24,16 +24,20 @@ export class SocialResolver {
   async followers(
     @Args("entityType") entityType: EntityType,
     @Args("entityId", { type: () => ID }) entityId: string,
+    @Args("limit", { nullable: true }) limit?: number,
+    @Args("offset", { nullable: true }) offset?: number,
   ) {
-    return this.socialService.getFollowers(entityType, entityId);
+    return this.socialService.getFollowers(entityType, entityId, { limit, offset });
   }
 
   @Query(() => [Object])
   async following(
     @Args("entityType") entityType: EntityType,
     @Args("entityId", { type: () => ID }) entityId: string,
+    @Args("limit", { nullable: true }) limit?: number,
+    @Args("offset", { nullable: true }) offset?: number,
   ) {
-    return this.socialService.getFollowing(entityType, entityId);
+    return this.socialService.getFollowing(entityType, entityId, { limit, offset });
   }
 
   @Mutation(() => Object)

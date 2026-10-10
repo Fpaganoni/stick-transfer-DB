@@ -509,13 +509,21 @@ export class UsersResolver {
   }
 
   @ResolveField()
-  async followers(@Parent() user: any) {
-    return this.socialService.getFollowers("USER", user.id);
+  async followers(
+    @Parent() user: any,
+    @Args("limit", { nullable: true }) limit?: number,
+    @Args("offset", { nullable: true }) offset?: number,
+  ) {
+    return this.socialService.getFollowers("USER", user.id, { limit, offset });
   }
 
   @ResolveField()
-  async following(@Parent() user: any) {
-    return this.socialService.getFollowing("USER", user.id);
+  async following(
+    @Parent() user: any,
+    @Args("limit", { nullable: true }) limit?: number,
+    @Args("offset", { nullable: true }) offset?: number,
+  ) {
+    return this.socialService.getFollowing("USER", user.id, { limit, offset });
   }
 
   @ResolveField()

@@ -349,3 +349,47 @@ describe("UsersResolver - authorization", () => {
     });
   });
 });
+
+describe("UsersResolver - follow lists", () => {
+  let resolver: UsersResolver;
+  let socialService: any;
+
+  beforeEach(() => {
+    socialService = {
+      getFollowers: jest.fn().mockResolvedValue([]),
+      getFollowing: jest.fn().mockResolvedValue([]),
+    };
+    resolver = new UsersResolver(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      socialService,
+    );
+  });
+
+  it("passes limit and offset to getFollowers", async () => {
+    await resolver.followers({ id: "u1" }, 10, 20);
+    expect(socialService.getFollowers).toHaveBeenCalledWith("USER", "u1", {
+      limit: 10,
+      offset: 20,
+    });
+  });
+
+  it("passes limit and offset to getFollowing", async () => {
+    await resolver.following({ id: "u1" }, 5, 0);
+    expect(socialService.getFollowing).toHaveBeenCalledWith("USER", "u1", {
+      limit: 5,
+      offset: 0,
+    });
+  });
+
+  it("leaves pagination to the service defaults when omitted", async () => {
+    await resolver.following({ id: "u1" });
+    expect(socialService.getFollowing).toHaveBeenCalledWith("USER", "u1", {
+      limit: undefined,
+      offset: undefined,
+    });
+  });
+});
