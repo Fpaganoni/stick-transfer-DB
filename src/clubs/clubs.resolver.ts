@@ -225,6 +225,15 @@ export class ClubsResolver {
     return this.clubsService.requestVerification(clubId, documentUrl);
   }
 
+  /** PRIVACY: the verification document is visible only to the owning club and super admins. */
+  @ResolveField()
+  async verificationDoc(@Parent() club: any, @Context() context: any) {
+    const currentUser = this.getCurrentUser(context);
+    if (!currentUser) return null;
+    const canSee = currentUser.userId === club.id || currentUser.role === "SUPERADMIN";
+    return canSee ? (club.verificationDoc ?? null) : null;
+  }
+
   @ResolveField()
   async followersCount(@Parent() club: any) {
     return this.socialService.countFollowers("CLUB", club.id);

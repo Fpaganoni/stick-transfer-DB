@@ -107,6 +107,34 @@ describe("ClubsResolver - authorization", () => {
     });
   });
 
+  describe("verificationDoc (privacy)", () => {
+    const club = { id: "club-1", verificationDoc: "https://res.cloudinary.com/doc.pdf" };
+
+    it("hides the document from anonymous callers", async () => {
+      authService.getUserFromRequest.mockReturnValue(null);
+      await expect(resolver.verificationDoc(club, ctx)).resolves.toBeNull();
+    });
+
+    it("hides the document from other users and other clubs", async () => {
+      asUser("player-1", "PLAYER");
+      await expect(resolver.verificationDoc(club, ctx)).resolves.toBeNull();
+      asUser("club-2");
+      await expect(resolver.verificationDoc(club, ctx)).resolves.toBeNull();
+    });
+
+    it("shows the document to the owning club and to a super admin", async () => {
+      asUser("club-1");
+      await expect(resolver.verificationDoc(club, ctx)).resolves.toBe(club.verificationDoc);
+      asUser("admin-1", "SUPERADMIN");
+      await expect(resolver.verificationDoc(club, ctx)).resolves.toBe(club.verificationDoc);
+    });
+
+    it("returns null when no document was uploaded", async () => {
+      asUser("club-1");
+      await expect(resolver.verificationDoc({ id: "club-1" }, ctx)).resolves.toBeNull();
+    });
+  });
+
   describe("clubAdmins", () => {
     it("is super admin only (exposes admin emails)", () => {
       clubsService.getClubAdmins = jest.fn().mockResolvedValue([]);
