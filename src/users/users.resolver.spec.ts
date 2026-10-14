@@ -294,6 +294,32 @@ describe("UsersResolver - authorization", () => {
     });
   });
 
+  describe("dateOfBirth privacy", () => {
+    const profile = { id: "u1", dateOfBirth: new Date(Date.UTC(2000, 4, 17)) };
+
+    it("hides it from anonymous viewers and other users", async () => {
+      authService.getUserFromRequest.mockReturnValue(null);
+      await expect(resolver.dateOfBirth(profile, ctx)).resolves.toBeNull();
+      asUser("other");
+      await expect(resolver.dateOfBirth(profile, ctx)).resolves.toBeNull();
+    });
+
+    it("shows the owner their own date as YYYY-MM-DD", async () => {
+      asUser("u1");
+      await expect(resolver.dateOfBirth(profile, ctx)).resolves.toBe("2000-05-17");
+    });
+
+    it("shows a super admin the date", async () => {
+      asUser("admin", "SUPERADMIN");
+      await expect(resolver.dateOfBirth(profile, ctx)).resolves.toBe("2000-05-17");
+    });
+
+    it("returns null when the user never set one", async () => {
+      asUser("u1");
+      await expect(resolver.dateOfBirth({ id: "u1", dateOfBirth: null }, ctx)).resolves.toBeNull();
+    });
+  });
+
   describe("private fields (email, licenseNumber)", () => {
     const profile = { id: "u1", email: "u1@test.com", licenseNumber: "LIC-1" };
 

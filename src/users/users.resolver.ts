@@ -506,6 +506,18 @@ export class UsersResolver {
     return this.canSeePrivateFields(user, context) ? user.email : null;
   }
 
+  /**
+   * PRIVACY: date of birth is visible only to the owner and super admins (it
+   * identifies minors aged 16-17). Rendered as YYYY-MM-DD, the format the
+   * register and updateUser inputs use.
+   */
+  @ResolveField()
+  async dateOfBirth(@Parent() user: any, @Context() context: any) {
+    if (!this.canSeePrivateFields(user, context) || !user.dateOfBirth) return null;
+    const value = user.dateOfBirth;
+    return value instanceof Date ? value.toISOString().slice(0, 10) : String(value);
+  }
+
   /** PRIVACY: license number is visible only to the owner and super admins. */
   @ResolveField()
   async licenseNumber(@Parent() user: any, @Context() context: any) {
