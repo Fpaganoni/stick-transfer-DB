@@ -575,8 +575,10 @@ type Query {
   # Same shape and paging as User.followers / User.following.
   followers(entityType: FollowEntityType!, entityId: ID!, limit: Int, offset: Int): [UserBasicInfo!]!
   following(entityType: FollowEntityType!, entityId: ID!, limit: Int, offset: Int): [UserBasicInfo!]!
-  profileLikes(entityType: LikeEntityType!, entityId: ID!): [Like!]!
-  likesGiven(entityType: LikeEntityType!, entityId: ID!): [Like!]!
+  """limit 1..100 (default 50), offset >= 0. Newest first."""
+  profileLikes(entityType: LikeEntityType!, entityId: ID!, limit: Int, offset: Int): [Like!]!
+  """limit 1..100 (default 50), offset >= 0. Newest first."""
+  likesGiven(entityType: LikeEntityType!, entityId: ID!, limit: Int, offset: Int): [Like!]!
 
   # News
   news(filters: NewsFiltersInput, page: Int, limit: Int): NewsPaginatedResult!

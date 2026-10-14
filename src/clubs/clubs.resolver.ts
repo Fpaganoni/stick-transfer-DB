@@ -237,27 +237,40 @@ export class ClubsResolver {
     return canSee ? (club.verificationDoc ?? null) : null;
   }
 
+  /**
+   * Members are loaded only when the query selects them, and for the whole
+   * list of clubs at once (one query), instead of joining them into every
+   * club the list returns.
+   */
   @ResolveField()
-  async followersCount(@Parent() club: any) {
-    return this.socialService.countFollowers("CLUB", club.id);
+  async members(@Parent() club: any, @Context() context: any) {
+    return this.clubsService.loadMembers(context, club.id);
+  }
+
+  // The counters and flags below are batched per request (see SocialLoaders):
+  // a list of N clubs costs one query per selected field, not N.
+
+  @ResolveField()
+  async followersCount(@Parent() club: any, @Context() context: any) {
+    return this.socialService.loadFollowersCount(context, "CLUB", club.id);
   }
 
   @ResolveField()
-  async likesReceivedCount(@Parent() club: any) {
-    return this.socialService.countLikesReceived("CLUB", club.id);
+  async likesReceivedCount(@Parent() club: any, @Context() context: any) {
+    return this.socialService.loadLikesReceivedCount(context, "CLUB", club.id);
   }
 
   @ResolveField()
   async isFollowedByCurrentUser(@Parent() club: any, @Context() context: any) {
     const currentUser = this.getCurrentUser(context);
     if (!currentUser) return false;
-    return this.socialService.isFollowing("USER", currentUser.userId, "CLUB", club.id);
+    return this.socialService.loadIsFollowing(context, currentUser.userId, "CLUB", club.id);
   }
 
   @ResolveField()
   async isLikedByCurrentUser(@Parent() club: any, @Context() context: any) {
     const currentUser = this.getCurrentUser(context);
     if (!currentUser) return false;
-    return this.socialService.hasLiked("USER", currentUser.userId, "CLUB", club.id);
+    return this.socialService.loadHasLiked(context, currentUser.userId, "CLUB", club.id);
   }
 }

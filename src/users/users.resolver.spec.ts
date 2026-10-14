@@ -445,3 +445,47 @@ describe("UsersResolver - follow lists", () => {
     });
   });
 });
+
+describe("UsersResolver - batched social fields", () => {
+  let resolver: UsersResolver;
+  let socialService: any;
+  let authService: any;
+  const ctx = { req: {} };
+  const user = { id: "u1" };
+
+  beforeEach(() => {
+    socialService = {
+      loadFollowersCount: jest.fn().mockResolvedValue(4),
+      loadLikesReceivedCount: jest.fn().mockResolvedValue(2),
+      loadIsFollowing: jest.fn().mockResolvedValue(true),
+      loadHasLiked: jest.fn().mockResolvedValue(false),
+    };
+    authService = { getUserFromRequest: jest.fn().mockReturnValue({ userId: "me", role: "PLAYER" }) };
+    resolver = new UsersResolver({} as any, authService, {} as any, {} as any, {} as any, socialService);
+  });
+
+  it("reads counters through the per-request loaders", async () => {
+    await expect(resolver.followersCount(user, ctx)).resolves.toBe(4);
+    await expect(resolver.likesReceivedCount(user, ctx)).resolves.toBe(2);
+
+    expect(socialService.loadFollowersCount).toHaveBeenCalledWith(ctx, "USER", "u1");
+    expect(socialService.loadLikesReceivedCount).toHaveBeenCalledWith(ctx, "USER", "u1");
+  });
+
+  it("reads the by-current-user flags through the loaders", async () => {
+    await expect(resolver.isFollowedByCurrentUser(user, ctx)).resolves.toBe(true);
+    await expect(resolver.isLikedByCurrentUser(user, ctx)).resolves.toBe(false);
+
+    expect(socialService.loadIsFollowing).toHaveBeenCalledWith(ctx, "me", "USER", "u1");
+    expect(socialService.loadHasLiked).toHaveBeenCalledWith(ctx, "me", "USER", "u1");
+  });
+
+  it("answers false to anonymous viewers without querying", async () => {
+    authService.getUserFromRequest.mockReturnValue(null);
+
+    await expect(resolver.isFollowedByCurrentUser(user, ctx)).resolves.toBe(false);
+    await expect(resolver.isLikedByCurrentUser(user, ctx)).resolves.toBe(false);
+
+    expect(socialService.loadIsFollowing).not.toHaveBeenCalled();
+  });
+});

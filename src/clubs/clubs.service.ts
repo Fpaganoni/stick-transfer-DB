@@ -11,6 +11,7 @@ import { resolveOwnedImages } from "../uploads/image-url";
 import { AppError } from "../common/errors/app.error";
 import { checkCountry, normalizeCountry } from "../common/geo/countries";
 import { normalizeOffsetPagination } from "../common/pagination";
+import { BatchLoader, createBatchLoader } from "../common/batch-loader";
 import {
   checkCloudinaryDocumentUrl,
   checkPhone,
@@ -28,6 +29,11 @@ function requireCountryCode(country: string): string {
 
 @Injectable()
 export class ClubsService {
+  private readonly membersLoaders = new WeakMap<
+    object,
+    BatchLoader<string, Awaited<ReturnType<ClubsService["findMembersForClubs"]>>[number]>
+  >();
+
   constructor(
     private prisma: PrismaService,
     private eventEmitter: EventEmitter2,
@@ -36,47 +42,61 @@ export class ClubsService {
   /** Newest first, ties broken by id so limit/offset pages never overlap. */
   async findAll(limit?: number | null, offset?: number | null) {
     const { skip, take } = normalizeOffsetPagination(limit, offset);
-    const clubs = await this.prisma.club.findMany({
+    // Only the owning user is joined: it is a required field of Club. Members
+    // are resolved lazily (see loadMembers) so a list does not pay for them
+    // when the query does not select them.
+    return this.prisma.club.findMany({
       orderBy: [{ createdAt: "desc" }, { id: "asc" }],
       skip,
       take,
-      include: {
-        teams: true,
-        user: true,
-        clubMembers: {
-          include: { user: true },
-        },
-      },
+      include: { user: true },
     });
-
-    return clubs.map((club) => this.withMappedMembers(club));
   }
 
   async findById(id: string) {
-    const club = await this.prisma.club.findUnique({
+    return this.prisma.club.findUnique({
       where: { id },
-      include: {
-        user: true,
-        clubMembers: {
-          include: { user: true },
-        },
-      },
+      include: { user: true },
     });
-
-    if (!club) return null;
-
-    return this.withMappedMembers(club);
   }
 
-  private withMappedMembers<T extends { clubMembers: any[] }>(club: T) {
-    return {
-      ...club,
-      members: club.clubMembers.map((member) => ({
+  /**
+   * Members of one club for the `Club.members` field. Requests for several
+   * clubs in the same GraphQL operation are answered by ONE query
+   * (findMembersForClubs); the per-request cache lives in a WeakMap keyed by
+   * the context object, so nothing is shared across requests.
+   */
+  loadMembers(context: object, clubId: string) {
+    if (typeof context !== "object" || context === null) {
+      return createBatchLoader((ids: string[]) => this.findMembersForClubs(ids)).load(clubId);
+    }
+    let loader = this.membersLoaders.get(context);
+    if (!loader) {
+      loader = createBatchLoader((ids: string[]) => this.findMembersForClubs(ids));
+      this.membersLoaders.set(context, loader);
+    }
+    return loader.load(clubId);
+  }
+
+  /** One query for the members of every given club; result[i] belongs to clubIds[i]. */
+  async findMembersForClubs(clubIds: string[]) {
+    const rows = await this.prisma.clubMember.findMany({
+      where: { clubId: { in: clubIds } },
+      include: { user: true },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+
+    const byClub = new Map<string, any[]>();
+    for (const member of rows) {
+      const list = byClub.get(member.clubId) ?? [];
+      list.push({
         ...member,
         role: member.roleInClub,
         joinedAt: member.createdAt.toISOString(),
-      })),
-    };
+      });
+      byClub.set(member.clubId, list);
+    }
+    return clubIds.map((id) => byClub.get(id) ?? []);
   }
 
   /**

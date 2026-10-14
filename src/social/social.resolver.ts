@@ -49,12 +49,14 @@ export class SocialResolver {
     @Args("followingId", { type: () => ID }) followingId: string,
   ) {
     const currentUser = this.requireUser(context);
-    return this.socialService.follow(
-      currentUser.userId,
-      followerType,
-      followerId,
-      followingType,
-      followingId,
+    return this.resettingLoaders(context, () =>
+      this.socialService.follow(
+        currentUser.userId,
+        followerType,
+        followerId,
+        followingType,
+        followingId,
+      ),
     );
   }
 
@@ -67,12 +69,14 @@ export class SocialResolver {
     @Args("followingId", { type: () => ID }) followingId: string,
   ) {
     const currentUser = this.requireUser(context);
-    return this.socialService.unfollow(
-      currentUser.userId,
-      followerType,
-      followerId,
-      followingType,
-      followingId,
+    return this.resettingLoaders(context, () =>
+      this.socialService.unfollow(
+        currentUser.userId,
+        followerType,
+        followerId,
+        followingType,
+        followingId,
+      ),
     );
   }
 
@@ -82,16 +86,20 @@ export class SocialResolver {
   async profileLikes(
     @Args("entityType") entityType: EntityType,
     @Args("entityId", { type: () => ID }) entityId: string,
+    @Args("limit", { nullable: true }) limit?: number,
+    @Args("offset", { nullable: true }) offset?: number,
   ) {
-    return this.socialService.getProfileLikes(entityType, entityId);
+    return this.socialService.getProfileLikes(entityType, entityId, { limit, offset });
   }
 
   @Query(() => [Object])
   async likesGiven(
     @Args("entityType") entityType: EntityType,
     @Args("entityId", { type: () => ID }) entityId: string,
+    @Args("limit", { nullable: true }) limit?: number,
+    @Args("offset", { nullable: true }) offset?: number,
   ) {
-    return this.socialService.getLikesGiven(entityType, entityId);
+    return this.socialService.getLikesGiven(entityType, entityId, { limit, offset });
   }
 
   @Mutation(() => Object)
@@ -103,12 +111,14 @@ export class SocialResolver {
     @Args("likedId", { type: () => ID }) likedId: string,
   ) {
     const currentUser = this.requireUser(context);
-    return this.socialService.likeProfile(
-      currentUser.userId,
-      likerType,
-      likerId,
-      likedType,
-      likedId,
+    return this.resettingLoaders(context, () =>
+      this.socialService.likeProfile(
+        currentUser.userId,
+        likerType,
+        likerId,
+        likedType,
+        likedId,
+      ),
     );
   }
 
@@ -121,12 +131,27 @@ export class SocialResolver {
     @Args("likedId", { type: () => ID }) likedId: string,
   ) {
     const currentUser = this.requireUser(context);
-    return this.socialService.unlikeProfile(
-      currentUser.userId,
-      likerType,
-      likerId,
-      likedType,
-      likedId,
+    return this.resettingLoaders(context, () =>
+      this.socialService.unlikeProfile(
+        currentUser.userId,
+        likerType,
+        likerId,
+        likedType,
+        likedId,
+      ),
     );
+  }
+
+  /**
+   * Mutations of one request run in sequence and may select counters of the
+   * affected profile afterwards: drop the per-request cache once the write is
+   * done (and on failure) so those fields read the new state.
+   */
+  private async resettingLoaders<T>(context: any, run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } finally {
+      this.socialService.resetLoaders(context);
+    }
   }
 }

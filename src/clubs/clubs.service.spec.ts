@@ -16,6 +16,7 @@ const mockPrismaService = {
     update: jest.fn(),
   },
   clubMember: {
+    findMany: jest.fn(),
     findFirst: jest.fn(),
     findUnique: jest.fn(),
     create: jest.fn(),
@@ -53,8 +54,8 @@ describe("ClubsService", () => {
 
   // ── findAll ───────────────────────────────────────────────────────────────
   describe("findAll", () => {
-    it("should return all clubs including their teams", async () => {
-      const mockClubs = [{ id: "club-1", name: "HC Barcelona", teams: [], clubMembers: [] }];
+    it("joins only the owning user: members and teams are not loaded for a list", async () => {
+      const mockClubs = [{ id: "club-1", name: "HC Barcelona" }];
       prisma.club.findMany.mockResolvedValue(mockClubs);
 
       const result = await service.findAll();
@@ -63,15 +64,9 @@ describe("ClubsService", () => {
         orderBy: [{ createdAt: "desc" }, { id: "asc" }],
         skip: 0,
         take: 50,
-        include: {
-          teams: true,
-          user: true,
-          clubMembers: {
-            include: { user: true },
-          },
-        },
+        include: { user: true },
       });
-      expect(result).toEqual([{ ...mockClubs[0], members: [] }]);
+      expect(result).toEqual(mockClubs);
     });
 
     it("applies the requested limit and offset", async () => {
@@ -91,6 +86,76 @@ describe("ClubsService", () => {
   });
 
   // ── create ────────────────────────────────────────────────────────────────
+  describe("findById", () => {
+    it("joins only the owning user and returns null for an unknown club", async () => {
+      prisma.club.findUnique.mockResolvedValueOnce({ id: "club-1" });
+      prisma.club.findUnique.mockResolvedValueOnce(null);
+
+      await expect(service.findById("club-1")).resolves.toEqual({ id: "club-1" });
+      await expect(service.findById("ghost")).resolves.toBeNull();
+
+      expect(prisma.club.findUnique).toHaveBeenNthCalledWith(1, {
+        where: { id: "club-1" },
+        include: { user: true },
+      });
+    });
+  });
+
+  describe("members", () => {
+    const joined = new Date("2026-01-02T03:04:05.000Z");
+    const member = (id: string, clubId: string) => ({
+      id,
+      clubId,
+      roleInClub: "PLAYER",
+      createdAt: joined,
+      user: { id: `user-${id}` },
+    });
+
+    it("findMembersForClubs makes ONE query and groups members per club in key order", async () => {
+      prisma.clubMember.findMany.mockResolvedValue([
+        member("m1", "club-2"),
+        member("m2", "club-1"),
+        member("m3", "club-2"),
+      ]);
+
+      const result = await service.findMembersForClubs(["club-1", "club-2", "club-3"]);
+
+      expect(prisma.clubMember.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.clubMember.findMany).toHaveBeenCalledWith({
+        where: { clubId: { in: ["club-1", "club-2", "club-3"] } },
+        include: { user: true },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      });
+      expect(result.map((list) => list.map((m) => m.id))).toEqual([["m2"], ["m1", "m3"], []]);
+      expect(result[0][0]).toMatchObject({
+        role: "PLAYER",
+        joinedAt: "2026-01-02T03:04:05.000Z",
+        user: { id: "user-m2" },
+      });
+    });
+
+    it("loadMembers answers every club of one request with a single query", async () => {
+      prisma.clubMember.findMany.mockResolvedValue([member("m1", "club-1")]);
+      const ctx = {};
+
+      const lists = await Promise.all(
+        ["club-1", "club-2"].map((id) => service.loadMembers(ctx, id)),
+      );
+
+      expect(prisma.clubMember.findMany).toHaveBeenCalledTimes(1);
+      expect(lists.map((list) => list.length)).toEqual([1, 0]);
+    });
+
+    it("loadMembers does not share results between requests", async () => {
+      prisma.clubMember.findMany.mockResolvedValue([]);
+
+      await service.loadMembers({}, "club-1");
+      await service.loadMembers({}, "club-1");
+
+      expect(prisma.clubMember.findMany).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe("create", () => {
     it("should create a club whose id matches its owning user (CLUB role)", async () => {
       const input = {

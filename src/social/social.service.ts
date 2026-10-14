@@ -8,6 +8,7 @@ import { EventEmitter2 } from "@nestjs/event-emitter";
 import { NotificationType, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { normalizeOffsetPagination } from "../common/pagination";
+import { SocialLoaders } from "./social.loaders";
 
 type EntityType = "USER" | "CLUB";
 
@@ -31,6 +32,12 @@ const FOLLOW_ORDER: Prisma.FollowOrderByWithRelationInput[] = [
   { id: "desc" },
 ];
 
+/** Newest first; id breaks createdAt ties so offset pages never repeat or drop rows. */
+const LIKE_ORDER: Prisma.LikeOrderByWithRelationInput[] = [
+  { createdAt: "desc" },
+  { id: "desc" },
+];
+
 /**
  * A club is listed as the User that owns it (same id), showing the club logo
  * as avatar when it has one.
@@ -46,6 +53,8 @@ function toBasicInfo(user: UserBasicInfo, clubLogo?: string | null): UserBasicIn
 
 @Injectable()
 export class SocialService {
+  private readonly loaders = new SocialLoaders(this);
+
   constructor(
     private prisma: PrismaService,
     private eventEmitter: EventEmitter2,
@@ -254,18 +263,102 @@ export class SocialService {
     return count > 0;
   }
 
-  async getProfileLikes(entityType: EntityType, entityId: string) {
+  /** Newest first; limit 1..100 (default 50), id breaks createdAt ties so pages never overlap. */
+  async getProfileLikes(
+    entityType: EntityType,
+    entityId: string,
+    pagination: OffsetPagination = {},
+  ) {
+    const { skip, take } = normalizeOffsetPagination(pagination.limit, pagination.offset);
     return this.prisma.like.findMany({
       where: { likedType: entityType, likedId: entityId },
-      orderBy: { createdAt: "desc" },
+      orderBy: LIKE_ORDER,
+      skip,
+      take,
     });
   }
 
-  async getLikesGiven(entityType: EntityType, entityId: string) {
+  async getLikesGiven(
+    entityType: EntityType,
+    entityId: string,
+    pagination: OffsetPagination = {},
+  ) {
+    const { skip, take } = normalizeOffsetPagination(pagination.limit, pagination.offset);
     return this.prisma.like.findMany({
       where: { likerType: entityType, likerId: entityId },
-      orderBy: { createdAt: "desc" },
+      orderBy: LIKE_ORDER,
+      skip,
+      take,
     });
+  }
+
+  // ─── Batched reads (one query per list, see SocialLoaders) ─────────────
+
+  async countFollowersBatch(type: EntityType, ids: string[]): Promise<Map<string, number>> {
+    const rows = await this.prisma.follow.groupBy({
+      by: ["followingId"],
+      where: { followingType: type, followingId: { in: ids } },
+      _count: { _all: true },
+    });
+    return new Map(rows.map((row) => [row.followingId, row._count._all]));
+  }
+
+  async countLikesReceivedBatch(type: EntityType, ids: string[]): Promise<Map<string, number>> {
+    const rows = await this.prisma.like.groupBy({
+      by: ["likedId"],
+      where: { likedType: type, likedId: { in: ids } },
+      _count: { _all: true },
+    });
+    return new Map(rows.map((row) => [row.likedId, row._count._all]));
+  }
+
+  async findFollowedIds(
+    followerType: EntityType,
+    followerId: string,
+    followingType: EntityType,
+    ids: string[],
+  ): Promise<Set<string>> {
+    const rows = await this.prisma.follow.findMany({
+      where: { followerType, followerId, followingType, followingId: { in: ids } },
+      select: { followingId: true },
+    });
+    return new Set(rows.map((row) => row.followingId));
+  }
+
+  async findLikedIds(
+    likerType: EntityType,
+    likerId: string,
+    likedType: EntityType,
+    ids: string[],
+  ): Promise<Set<string>> {
+    const rows = await this.prisma.like.findMany({
+      where: { likerType, likerId, likedType, likedId: { in: ids } },
+      select: { likedId: true },
+    });
+    return new Set(rows.map((row) => row.likedId));
+  }
+
+  // Per-request wrappers for the field resolvers of User and Club.
+
+  loadFollowersCount(context: object, type: EntityType, id: string) {
+    return this.loaders.followersCount(context, type, id);
+  }
+
+  loadLikesReceivedCount(context: object, type: EntityType, id: string) {
+    return this.loaders.likesReceivedCount(context, type, id);
+  }
+
+  loadIsFollowing(context: object, viewerId: string, type: EntityType, id: string) {
+    return this.loaders.isFollowing(context, viewerId, type, id);
+  }
+
+  loadHasLiked(context: object, viewerId: string, type: EntityType, id: string) {
+    return this.loaders.hasLiked(context, viewerId, type, id);
+  }
+
+  /** Follow/like mutations call this so later fields of the same request read fresh values. */
+  resetLoaders(context: object): void {
+    this.loaders.reset(context);
   }
 
   // ─── Counts & current-user checks (for field resolvers) ────────────────
