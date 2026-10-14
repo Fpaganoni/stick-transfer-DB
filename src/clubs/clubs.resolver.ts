@@ -244,7 +244,16 @@ export class ClubsResolver {
    */
   @ResolveField()
   async members(@Parent() club: any, @Context() context: any) {
-    return this.clubsService.loadMembers(context, club.id);
+    const members = await this.clubsService.loadMembers(context, club.id);
+
+    // PRIVACY: pending and rejected invitations name users who never joined, so
+    // only the club itself (club id = owner user id) and super admins see them.
+    const currentUser = this.getCurrentUser(context);
+    const seesInvitations =
+      currentUser?.userId === club.id || currentUser?.role === "SUPERADMIN";
+    return seesInvitations
+      ? members
+      : members.filter((member: any) => member.status === "ACTIVE");
   }
 
   // The counters and flags below are batched per request (see SocialLoaders):

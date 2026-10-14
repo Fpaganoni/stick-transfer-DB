@@ -92,3 +92,39 @@ describe("throwIfInvalid", () => {
     }
   });
 });
+
+describe("checkCloudinaryDocumentUrl - cloud name", () => {
+  const originalUrl = process.env.CLOUDINARY_URL;
+
+  afterEach(() => {
+    if (originalUrl === undefined) delete process.env.CLOUDINARY_URL;
+    else process.env.CLOUDINARY_URL = originalUrl;
+  });
+
+  it("accepts only documents stored in this app's own Cloudinary account when configured", () => {
+    process.env.CLOUDINARY_URL = "cloudinary://key:secret@demo";
+
+    expect(
+      checkCloudinaryDocumentUrl("cvUrl", "https://res.cloudinary.com/demo/raw/upload/v1/cv.pdf"),
+    ).toBeNull();
+    expect(
+      checkCloudinaryDocumentUrl("cvUrl", "https://res.cloudinary.com/attacker/raw/upload/v1/cv.pdf"),
+    ).toMatchObject({ code: "DOCUMENT_URL_INVALID" });
+  });
+
+  it("does not accept a path that merely starts with the cloud name", () => {
+    process.env.CLOUDINARY_URL = "cloudinary://key:secret@demo";
+
+    expect(
+      checkCloudinaryDocumentUrl("cvUrl", "https://res.cloudinary.com/demo-evil/raw/upload/cv.pdf"),
+    ).toMatchObject({ code: "DOCUMENT_URL_INVALID" });
+  });
+
+  it("falls back to host-only when no Cloudinary account is configured (nothing can be uploaded then)", () => {
+    delete process.env.CLOUDINARY_URL;
+
+    expect(
+      checkCloudinaryDocumentUrl("cvUrl", "https://res.cloudinary.com/anything/raw/upload/cv.pdf"),
+    ).toBeNull();
+  });
+});

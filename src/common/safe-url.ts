@@ -1,4 +1,5 @@
 import { AppError, FieldError } from "./errors/app.error";
+import { cloudNameFromEnv } from "../uploads/image-url";
 
 const MAX_URL_LENGTH = 2048;
 const CLOUDINARY_HOST = "res.cloudinary.com";
@@ -40,13 +41,18 @@ export function checkPublicHttpUrl(field: string, value: string): FieldError | n
  */
 export function checkCloudinaryDocumentUrl(field: string, value: string): FieldError | null {
   const url = parse(value);
+  // res.cloudinary.com serves every Cloudinary account: pin this app's own cloud
+  // so a file uploaded to someone else's free account cannot pass as ours. With
+  // no account configured nothing can be uploaded, so only the host is checked.
+  const cloudName = cloudNameFromEnv();
   const valid =
     !!url &&
     url.protocol === "https:" &&
     url.hostname === CLOUDINARY_HOST &&
     !url.port &&
     !url.username &&
-    !url.password;
+    !url.password &&
+    (!cloudName || url.pathname.startsWith(`/${cloudName}/`));
   return valid
     ? null
     : {

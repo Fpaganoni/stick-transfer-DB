@@ -662,11 +662,12 @@ describe("JobsService", () => {
         userId: "user-1",
         jobOpportunity: { club: { id: currentUserId } },
       });
-      prisma.jobApplication.update.mockResolvedValue({ id: applicationId, status: "ACCEPTED" });
+      prisma.jobApplication.updateMany.mockResolvedValue({ count: 1 });
+      prisma.jobApplication.findUniqueOrThrow.mockResolvedValue({ id: applicationId, status: "ACCEPTED" });
 
       await service.updateApplicationStatus(currentUserId, applicationId, "ACCEPTED", "Great profile");
 
-      const callData = prisma.jobApplication.update.mock.calls[0][0].data;
+      const callData = prisma.jobApplication.updateMany.mock.calls[0][0].data;
       expect(callData.status).toBe("ACCEPTED");
       expect(callData.reviewedAt).toBeInstanceOf(Date);
       expect(callData.reviewedBy).toBe(currentUserId);
@@ -683,7 +684,7 @@ describe("JobsService", () => {
       await expect(
         service.updateApplicationStatus(currentUserId, applicationId, "ACCEPTED")
       ).rejects.toThrow("You are not the admin of this club");
-      expect(prisma.jobApplication.update).not.toHaveBeenCalled();
+      expect(prisma.jobApplication.updateMany).not.toHaveBeenCalled();
     });
 
     it("should throw if application not found", async () => {
@@ -704,7 +705,8 @@ describe("JobsService", () => {
         });
 
       beforeEach(() => {
-        prisma.jobApplication.update.mockResolvedValue({ id: applicationId });
+        prisma.jobApplication.updateMany.mockResolvedValue({ count: 1 });
+        prisma.jobApplication.findUniqueOrThrow.mockResolvedValue({ id: applicationId });
       });
 
       it.each(["HACKED", "accepted", "", "WITHDRAWN", "PENDING"])(
@@ -715,7 +717,7 @@ describe("JobsService", () => {
           await expect(
             service.updateApplicationStatus(currentUserId, applicationId, status),
           ).rejects.toThrow(BadRequestException);
-          expect(prisma.jobApplication.update).not.toHaveBeenCalled();
+          expect(prisma.jobApplication.updateMany).not.toHaveBeenCalled();
         },
       );
 
@@ -725,7 +727,7 @@ describe("JobsService", () => {
         await expect(
           service.updateApplicationStatus(currentUserId, applicationId, "ACCEPTED"),
         ).rejects.toThrow("withdrawn");
-        expect(prisma.jobApplication.update).not.toHaveBeenCalled();
+        expect(prisma.jobApplication.updateMany).not.toHaveBeenCalled();
       });
 
       it.each([
@@ -739,7 +741,27 @@ describe("JobsService", () => {
 
         await service.updateApplicationStatus(currentUserId, applicationId, to);
 
-        expect(prisma.jobApplication.update).toHaveBeenCalledTimes(1);
+        expect(prisma.jobApplication.updateMany).toHaveBeenCalledTimes(1);
+      });
+
+      it("loses the race when the applicant withdraws after the club read the row", async () => {
+        stored("PENDING");
+        // The guarded write matches no row: the application became WITHDRAWN meanwhile
+        prisma.jobApplication.updateMany.mockResolvedValue({ count: 0 });
+
+        await expect(
+          service.updateApplicationStatus(currentUserId, applicationId, "ACCEPTED"),
+        ).rejects.toThrow(ConflictException);
+
+        expect(prisma.jobApplication.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: applicationId, status: { not: "WITHDRAWN" } },
+          }),
+        );
+        expect(mockEventEmitter.emit).not.toHaveBeenCalledWith(
+          "job.application_status_updated",
+          expect.anything(),
+        );
       });
 
       it("rejects notes longer than 2000 characters", async () => {
@@ -748,7 +770,7 @@ describe("JobsService", () => {
         await expect(
           service.updateApplicationStatus(currentUserId, applicationId, "ACCEPTED", "x".repeat(2001)),
         ).rejects.toThrow(BadRequestException);
-        expect(prisma.jobApplication.update).not.toHaveBeenCalled();
+        expect(prisma.jobApplication.updateMany).not.toHaveBeenCalled();
       });
     });
   });

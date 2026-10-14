@@ -234,9 +234,37 @@ describe("ClubsResolver - batched field resolvers", () => {
     expect(socialService.loadHasLiked).not.toHaveBeenCalled();
   });
 
-  it("loads the members only when the field is selected, batched per request", async () => {
-    await expect(resolver.members(club, ctx)).resolves.toEqual([{ id: "m1" }]);
+  describe("members", () => {
+    const all = [
+      { id: "m1", status: "ACTIVE" },
+      { id: "m2", status: "PENDING" },
+      { id: "m3", status: "REJECTED" },
+    ];
 
-    expect(clubsService.loadMembers).toHaveBeenCalledWith(ctx, "club-1");
+    beforeEach(() => {
+      clubsService.loadMembers.mockResolvedValue(all);
+    });
+
+    it("loads through the batched per-request loader", async () => {
+      await resolver.members(club, ctx);
+
+      expect(clubsService.loadMembers).toHaveBeenCalledWith(ctx, "club-1");
+    });
+
+    it("shows only ACTIVE members to anonymous visitors and other users", async () => {
+      authService.getUserFromRequest.mockReturnValue(null);
+      await expect(resolver.members(club, ctx)).resolves.toEqual([all[0]]);
+
+      authService.getUserFromRequest.mockReturnValue({ userId: "someone", role: "PLAYER" });
+      await expect(resolver.members(club, ctx)).resolves.toEqual([all[0]]);
+    });
+
+    it("shows pending and rejected invitations to the club itself and to a super admin", async () => {
+      authService.getUserFromRequest.mockReturnValue({ userId: "club-1", role: "CLUB" });
+      await expect(resolver.members(club, ctx)).resolves.toEqual(all);
+
+      authService.getUserFromRequest.mockReturnValue({ userId: "admin", role: "SUPERADMIN" });
+      await expect(resolver.members(club, ctx)).resolves.toEqual(all);
+    });
   });
 });

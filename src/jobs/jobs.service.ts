@@ -462,14 +462,24 @@ export class JobsService {
       );
     }
 
-    const updated = await this.prisma.jobApplication.update({
-      where: { id: applicationId },
+    // The WITHDRAWN check above ran on a stale read: guard the write itself so an
+    // applicant who withdraws in between is not overwritten with a final decision
+    // (which would block both withdrawing and re-applying).
+    const { count } = await this.prisma.jobApplication.updateMany({
+      where: { id: applicationId, status: { not: "WITHDRAWN" } },
       data: {
         status: status as any,
         reviewedAt: new Date(),
         reviewedBy: currentUserId,
         notes,
       },
+    });
+    if (count === 0) {
+      throw new ConflictException("The applicant withdrew this application");
+    }
+
+    const updated = await this.prisma.jobApplication.findUniqueOrThrow({
+      where: { id: applicationId },
       include: {
         user: true,
         jobOpportunity: true,
