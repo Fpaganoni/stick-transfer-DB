@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { UmpireModality } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { countryFilter } from "../common/geo/countries";
+import { normalizeOffsetPagination } from "../common/pagination";
 
 export interface ExploreFilters {
   role?: string;
@@ -47,9 +48,8 @@ export class ExploreService {
       umpireCategory,
       search,
       searchQuery,
-      limit = 50,
-      offset = 0,
     } = filters;
+    const { skip, take } = normalizeOffsetPagination(filters.limit, filters.offset);
 
     const where: any = {
       isActive: true, // Only show active users
@@ -151,8 +151,8 @@ export class ExploreService {
         { isVerified: "desc" }, // Verified users first
         { createdAt: "desc" }, // Then newest first
       ],
-      take: limit,
-      skip: offset,
+      take,
+      skip,
       include: {
         club: true, // Include current club info
       },
@@ -164,7 +164,8 @@ export class ExploreService {
    * Returns clubs with league/country filtering and search
    */
   async getExploreClubs(filters: ExploreFilters) {
-    const { country, league, search, limit = 50, offset = 0 } = filters;
+    const { country, league, search } = filters;
+    const { skip, take } = normalizeOffsetPagination(filters.limit, filters.offset);
 
     const where: any = {};
 
@@ -194,8 +195,8 @@ export class ExploreService {
         { isVerified: "desc" }, // Verified clubs first
         { createdAt: "desc" }, // Then newest first
       ],
-      take: limit,
-      skip: offset,
+      take,
+      skip,
     });
   }
 

@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { UsersService } from "./users.service";
 import { PrismaService } from "../prisma.service";
@@ -161,9 +162,31 @@ describe("UsersService", () => {
       const result = await service.findAll();
 
       expect(prisma.user.findMany).toHaveBeenCalledWith({
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        skip: 0,
+        take: 50,
       });
       expect(result).toHaveLength(2);
+    });
+
+    it("applies the requested limit and offset", async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await service.findAll(10, 20);
+
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 20, take: 10 }),
+      );
+    });
+
+    it.each([
+      [101, 0],
+      [0, 0],
+      [1.5, 0],
+      [10, -1],
+    ])("rejects limit=%p offset=%p without querying", async (limit, offset) => {
+      await expect(service.findAll(limit, offset)).rejects.toThrow(BadRequestException);
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
     });
   });
 
@@ -177,9 +200,16 @@ describe("UsersService", () => {
 
       expect(prisma.user.findMany).toHaveBeenCalledWith({
         where: { role: "PLAYER" },
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        skip: 0,
+        take: 50,
       });
       expect(result).toEqual(mockPlayers);
+    });
+
+    it("rejects a limit above the maximum", async () => {
+      await expect(service.findByRole("COACH", 101)).rejects.toThrow(BadRequestException);
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
     });
   });
 

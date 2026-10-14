@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { ExploreService } from "./explore.service";
 import { PrismaService } from "../prisma.service";
@@ -26,6 +27,34 @@ describe("ExploreService", () => {
     service = module.get<ExploreService>(ExploreService);
     prisma = module.get(PrismaService);
     jest.clearAllMocks();
+  });
+
+  describe("pagination bounds", () => {
+    it("defaults to 50 rows from offset 0", async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+      prisma.club.findMany.mockResolvedValue([]);
+
+      await service.getExploreUsers({});
+      await service.getExploreClubs({});
+
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 50, skip: 0 }),
+      );
+      expect(prisma.club.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 50, skip: 0 }),
+      );
+    });
+
+    it.each([
+      { limit: 1_000_000_000 },
+      { limit: 0 },
+      { offset: -5 },
+    ])("rejects %j before querying", async (page) => {
+      await expect(service.getExploreUsers(page)).rejects.toThrow(BadRequestException);
+      await expect(service.getExploreClubs(page)).rejects.toThrow(BadRequestException);
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
+      expect(prisma.club.findMany).not.toHaveBeenCalled();
+    });
   });
 
   describe("getExploreUsers", () => {

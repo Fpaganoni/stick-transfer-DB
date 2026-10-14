@@ -10,6 +10,7 @@ import { PrismaService } from "../prisma.service";
 import { resolveOwnedImages } from "../uploads/image-url";
 import { AppError } from "../common/errors/app.error";
 import { checkCountry, normalizeCountry } from "../common/geo/countries";
+import { normalizeOffsetPagination } from "../common/pagination";
 
 /** Club.country is NOT NULL, so a blank value is invalid too. 400 COUNTRY_INVALID. */
 function requireCountryCode(country: string): string {
@@ -25,8 +26,13 @@ export class ClubsService {
     private eventEmitter: EventEmitter2,
   ) {}
 
-  async findAll() {
+  /** Newest first, ties broken by id so limit/offset pages never overlap. */
+  async findAll(limit?: number | null, offset?: number | null) {
+    const { skip, take } = normalizeOffsetPagination(limit, offset);
     const clubs = await this.prisma.club.findMany({
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+      skip,
+      take,
       include: {
         teams: true,
         user: true,

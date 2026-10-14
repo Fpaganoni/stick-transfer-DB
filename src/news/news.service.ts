@@ -1,5 +1,8 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
+import { normalizePagination } from "../common/pagination";
+
+const NEWS_DEFAULT_PAGE_SIZE = 20;
 
 export interface NewsArticleInput {
   slug: string;
@@ -48,8 +51,8 @@ export class NewsService {
   }
 
   private async paginate(where: any, page?: number, limit?: number) {
-    const take = limit && limit > 0 ? limit : 20;
-    const skip = page && page > 1 ? (page - 1) * take : 0;
+    const { skip: pageSkip, take } = normalizePagination(page, limit ?? NEWS_DEFAULT_PAGE_SIZE);
+    const skip = pageSkip ?? 0;
 
     const [items, total] = await Promise.all([
       this.prisma.newsArticle.findMany({

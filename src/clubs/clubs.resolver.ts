@@ -49,8 +49,11 @@ export class ClubsResolver {
   }
 
   @Query()
-  clubs() {
-    return this.clubsService.findAll();
+  clubs(
+    @Args("limit", { nullable: true }) limit?: number,
+    @Args("offset", { nullable: true }) offset?: number,
+  ) {
+    return this.clubsService.findAll(limit, offset);
   }
 
   @Query("club")

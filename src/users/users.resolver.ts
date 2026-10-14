@@ -313,8 +313,11 @@ export class UsersResolver {
   }
 
   @Query(() => [Object])
-  async users() {
-    return this.usersService.findAll();
+  async users(
+    @Args("limit", { nullable: true }) limit?: number,
+    @Args("offset", { nullable: true }) offset?: number,
+  ) {
+    return this.usersService.findAll(limit, offset);
   }
 
   @Query(() => Object, { nullable: true })
@@ -328,18 +331,27 @@ export class UsersResolver {
   }
 
   @Query(() => [Object])
-  async players() {
-    return this.usersService.findByRole("PLAYER");
+  async players(
+    @Args("limit", { nullable: true }) limit?: number,
+    @Args("offset", { nullable: true }) offset?: number,
+  ) {
+    return this.usersService.findByRole("PLAYER", limit, offset);
   }
 
   @Query(() => [Object])
-  async coaches() {
-    return this.usersService.findByRole("COACH");
+  async coaches(
+    @Args("limit", { nullable: true }) limit?: number,
+    @Args("offset", { nullable: true }) offset?: number,
+  ) {
+    return this.usersService.findByRole("COACH", limit, offset);
   }
 
   @Query(() => [Object])
-  async umpires() {
-    return this.usersService.findByRole("UMPIRE");
+  async umpires(
+    @Args("limit", { nullable: true }) limit?: number,
+    @Args("offset", { nullable: true }) offset?: number,
+  ) {
+    return this.usersService.findByRole("UMPIRE", limit, offset);
   }
 
   @Mutation(() => Object)

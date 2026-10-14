@@ -495,7 +495,8 @@ input NewsArticleUpdateInput {
 
 type Query {
   # Users
-  users: [User!]!
+  # Public lists are paginated: limit 1..100 (default 50), offset >= 0. Newest first, ties broken by id.
+  users(limit: Int, offset: Int): [User!]!
   user(id: ID!): User
   getUserByUsername(username: String!): User
   me: User
@@ -503,12 +504,13 @@ type Query {
   isEmailAvailable(email: String!): Boolean!
   """Public, rate limited (10/min). Case-insensitive."""
   isUsernameAvailable(username: String!): Boolean!
-  players: [User!]!
-  coaches: [User!]!
-  umpires: [User!]!
+  players(limit: Int, offset: Int): [User!]!
+  coaches(limit: Int, offset: Int): [User!]!
+  umpires(limit: Int, offset: Int): [User!]!
 
   # Clubs & Teams
-  clubs: [Club!]!
+  # limit 1..100 (default 50), offset >= 0. Newest first, ties broken by id.
+  clubs(limit: Int, offset: Int): [Club!]!
   club(id: ID!): Club
   """Super admin only."""
   clubAdmins: [ClubAdminView!]!

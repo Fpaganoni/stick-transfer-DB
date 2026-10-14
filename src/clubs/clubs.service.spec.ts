@@ -60,6 +60,9 @@ describe("ClubsService", () => {
       const result = await service.findAll();
 
       expect(prisma.club.findMany).toHaveBeenCalledWith({
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        skip: 0,
+        take: 50,
         include: {
           teams: true,
           user: true,
@@ -69,6 +72,21 @@ describe("ClubsService", () => {
         },
       });
       expect(result).toEqual([{ ...mockClubs[0], members: [] }]);
+    });
+
+    it("applies the requested limit and offset", async () => {
+      prisma.club.findMany.mockResolvedValue([]);
+
+      await service.findAll(25, 50);
+
+      expect(prisma.club.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 50, take: 25 }),
+      );
+    });
+
+    it("rejects a limit above the maximum without querying", async () => {
+      await expect(service.findAll(1000)).rejects.toThrow(BadRequestException);
+      expect(prisma.club.findMany).not.toHaveBeenCalled();
     });
   });
 

@@ -6,6 +6,7 @@ import {
 import { PrismaService } from "../prisma.service";
 import * as bcrypt from "bcrypt";
 import { resolveOwnedImages } from "../uploads/image-url";
+import { normalizeOffsetPagination } from "../common/pagination";
 
 @Injectable()
 export class UsersService {
@@ -113,20 +114,23 @@ export class UsersService {
     });
   }
 
-  async findAll() {
+  /** Newest first, ties broken by id so limit/offset pages never overlap. */
+  async findAll(limit?: number | null, offset?: number | null) {
+    const { skip, take } = normalizeOffsetPagination(limit, offset);
     return this.prisma.user.findMany({
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+      skip,
+      take,
     });
   }
 
-  async findByRole(role: string) {
+  async findByRole(role: string, limit?: number | null, offset?: number | null) {
+    const { skip, take } = normalizeOffsetPagination(limit, offset);
     return this.prisma.user.findMany({
       where: { role: role as any },
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+      skip,
+      take,
     });
   }
 
