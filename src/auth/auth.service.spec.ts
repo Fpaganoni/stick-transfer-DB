@@ -99,6 +99,15 @@ describe("AuthService", () => {
       });
     });
 
+    it("should return null for a deactivated user even with the right password", async () => {
+      prisma.user.findUnique.mockResolvedValue({ ...mockUser, isActive: false });
+      (mockBcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      const result = await service.validateUser("player@hockey.com", "password123");
+
+      expect(result).toBeNull();
+    });
+
     it("should return null for OAuth users (password = null) — prevents bcrypt crash", async () => {
       // Critical: OAuth users have no password. Calling bcrypt.compare(pass, null) would throw.
       prisma.user.findUnique.mockResolvedValue({ ...mockUser, password: null });
@@ -191,6 +200,24 @@ describe("AuthService", () => {
         },
       });
       expect(result).toEqual({ access_token: "mocked-jwt-token" });
+    });
+
+    it("rejects a returning Google user whose account was deactivated", async () => {
+      prisma.user.findFirst.mockResolvedValue({ ...existingOAuthUser, isActive: false });
+
+      await expect(service.oauthLogin(googleProfile)).rejects.toThrow(UnauthorizedException);
+    });
+
+    it("does not link a deactivated email account", async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue({
+        id: "user-legacy",
+        email: "coach@hockey.com",
+        isActive: false,
+      });
+
+      await expect(service.oauthLogin(googleProfile)).rejects.toThrow(UnauthorizedException);
+      expect(prisma.user.update).not.toHaveBeenCalled();
     });
 
     it("refuses to relink an account already tied to a different Google identity", async () => {
@@ -410,7 +437,7 @@ describe("AuthService", () => {
 
       expect(prisma.user.findUnique).toHaveBeenCalledWith({
         where: { id: "user-1" },
-        select: { tokenVersion: true },
+        select: { tokenVersion: true, isActive: true },
       });
       expect(req.sessionRevoked).toBeUndefined();
       expect(service.getUserFromRequest(req)).toEqual({ userId: "user-1", role: "PLAYER" });
@@ -445,6 +472,17 @@ describe("AuthService", () => {
       await service.resolveSession(req);
 
       expect(req.sessionRevoked).toBe(true);
+    });
+
+    it("revokes the session of a deactivated user even if the version still matches", async () => {
+      verifies({ sub: "user-1", role: "PLAYER", tv: 0 });
+      prisma.user.findUnique.mockResolvedValue({ tokenVersion: 0, isActive: false });
+      const req: any = withToken();
+
+      await service.resolveSession(req);
+
+      expect(req.sessionRevoked).toBe(true);
+      expect(service.getUserFromRequest(req)).toBeNull();
     });
 
     it("revokes the session when the user no longer exists", async () => {

@@ -38,6 +38,30 @@ describe("AdminService", () => {
     prisma.clubMember.count.mockResolvedValue(0);
   });
 
+  describe("setUserActive", () => {
+    it("revokes every session of a user it deactivates", async () => {
+      prisma.user.update.mockResolvedValue({ id: "u1", isActive: false });
+
+      await service.setUserActive("u1", false);
+
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: "u1" },
+        data: { isActive: false, tokenVersion: { increment: 1 } },
+      });
+    });
+
+    it("does not touch tokenVersion when reactivating", async () => {
+      prisma.user.update.mockResolvedValue({ id: "u1", isActive: true });
+
+      await service.setUserActive("u1", true);
+
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: "u1" },
+        data: { isActive: true },
+      });
+    });
+  });
+
   describe("getDashboardStats", () => {
     it("should query users grouped by role, status, and signup window", async () => {
       await service.getDashboardStats();

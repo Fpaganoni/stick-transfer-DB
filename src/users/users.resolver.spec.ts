@@ -20,7 +20,11 @@ describe("UsersResolver - authorization", () => {
       deleteCv: jest.fn(),
       assertActiveClubMember: jest.fn().mockResolvedValue(undefined),
     };
-    authService = { getUserFromRequest: jest.fn() };
+    authService = {
+      getUserFromRequest: jest.fn(),
+      revokeSessions: jest.fn().mockResolvedValue(undefined),
+      clearAuthCookie: jest.fn(),
+    };
     cloudinary = {
       uploadBase64: jest.fn().mockResolvedValue({ secure_url: "https://img" }),
       uploadPdf: jest.fn().mockResolvedValue({ secure_url: "https://cv" }),
@@ -37,6 +41,28 @@ describe("UsersResolver - authorization", () => {
 
   const asUser = (userId: string, role = "PLAYER") =>
     authService.getUserFromRequest.mockReturnValue({ userId, role });
+
+  describe("logout", () => {
+    const logoutCtx = { req: {}, res: {} };
+
+    it("revokes every session of the caller and clears the cookie", async () => {
+      asUser("u1");
+
+      await expect(resolver.logout(logoutCtx)).resolves.toBe(true);
+
+      expect(authService.revokeSessions).toHaveBeenCalledWith("u1");
+      expect(authService.clearAuthCookie).toHaveBeenCalledWith(logoutCtx.res);
+    });
+
+    it("still clears the cookie for an anonymous or already revoked caller", async () => {
+      authService.getUserFromRequest.mockReturnValue(null);
+
+      await expect(resolver.logout(logoutCtx)).resolves.toBe(true);
+
+      expect(authService.revokeSessions).not.toHaveBeenCalled();
+      expect(authService.clearAuthCookie).toHaveBeenCalledWith(logoutCtx.res);
+    });
+  });
 
   describe("updateUser", () => {
     it("rejects unauthenticated callers", async () => {

@@ -23,7 +23,8 @@ export class AdminService {
   async setUserActive(userId: string, active: boolean) {
     return this.prisma.user.update({
       where: { id: userId },
-      data: { isActive: active },
+      // Deactivating also kills every session the user already holds.
+      data: active ? { isActive: true } : { isActive: false, tokenVersion: { increment: 1 } },
     });
   }
 

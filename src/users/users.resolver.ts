@@ -223,6 +223,10 @@ export class UsersResolver {
 
   @Mutation(() => Boolean)
   async logout(@Context() context: any) {
+    // Clearing the cookie only logs this browser out; a stolen copy of the token
+    // would live on. Bumping tokenVersion kills it everywhere (all devices).
+    const currentUser = this.getCurrentUser(context);
+    if (currentUser) await this.authService.revokeSessions(currentUser.userId);
     this.authService.clearAuthCookie(context.res);
     return true;
   }

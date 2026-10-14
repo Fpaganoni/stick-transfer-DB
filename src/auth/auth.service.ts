@@ -58,7 +58,7 @@ export class AuthService {
     // Guard: OAuth users have no password — reject plaintext login attempts.
     const hash = user?.password ?? DUMMY_PASSWORD_HASH;
     const match = await bcrypt.compare(pass ?? "", hash);
-    if (match && user?.password) return user;
+    if (match && user?.password && user.isActive !== false) return user;
     return null;
   }
 
@@ -127,6 +127,13 @@ export class AuthService {
     }
   }
 
+  /** A banned/deactivated account must not obtain a session through any login path. */
+  private assertActive(user: { isActive?: boolean }) {
+    if (user.isActive === false) {
+      throw new UnauthorizedException("This account is deactivated.");
+    }
+  }
+
   /** Cookie first, then the Bearer header (cookie-migration fallback). */
   private readToken(req?: SessionRequest): string | null {
     return (
@@ -159,10 +166,10 @@ export class AuthService {
     const user = payload.sub
       ? await this.prisma.user.findUnique({
           where: { id: payload.sub },
-          select: { tokenVersion: true },
+          select: { tokenVersion: true, isActive: true },
         })
       : null;
-    if (!user || user.tokenVersion !== (payload.tv ?? 0)) {
+    if (!user || user.isActive === false || user.tokenVersion !== (payload.tv ?? 0)) {
       req.sessionRevoked = true;
     }
   }
@@ -196,7 +203,10 @@ export class AuthService {
       },
     });
 
-    if (user) return this.login(user);
+    if (user) {
+      this.assertActive(user);
+      return this.login(user);
+    }
 
     // Linking or creating by email is only safe when the provider vouches for it.
     if (profile.email && profile.emailVerified !== true) {
@@ -211,6 +221,7 @@ export class AuthService {
       user = await this.prisma.user.findUnique({ where: { email } });
 
       if (user) {
+        this.assertActive(user);
         // Never take over an account that already belongs to another Google identity.
         if (user.authProvider === profile.provider && user.socialId && user.socialId !== profile.socialId) {
           throw new UnauthorizedException(
