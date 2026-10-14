@@ -54,3 +54,36 @@ describe("follow lists SDL", () => {
     expect(user.getFields().followingCount.type.toString()).toBe("Int!");
   });
 });
+
+describe("likes are gone from the API (only follow/unfollow remain)", () => {
+  const schema = loadSchema();
+  const query = schema.getQueryType()!.getFields();
+  const mutation = schema.getMutationType()!.getFields();
+
+  it.each(["profileLikes", "likesGiven"])("Query.%s no longer exists", (name) => {
+    expect(query[name]).toBeUndefined();
+  });
+
+  it.each(["likeProfile", "unlikeProfile"])("Mutation.%s no longer exists", (name) => {
+    expect(mutation[name]).toBeUndefined();
+  });
+
+  it.each([
+    ["User", "likesReceivedCount"],
+    ["User", "isLikedByCurrentUser"],
+    ["Club", "likesReceivedCount"],
+    ["Club", "isLikedByCurrentUser"],
+  ])("%s.%s no longer exists", (typeName, fieldName) => {
+    const type = schema.getType(typeName) as GraphQLObjectType;
+    expect(type.getFields()[fieldName]).toBeUndefined();
+  });
+
+  it.each(["Like", "LikeEntityType"])("type %s no longer exists", (name) => {
+    expect(schema.getType(name)).toBeUndefined();
+  });
+
+  it("keeps the follow API", () => {
+    for (const name of ["follow", "unfollow"]) expect(mutation[name]).toBeDefined();
+    for (const name of ["followers", "following"]) expect(query[name]).toBeDefined();
+  });
+});

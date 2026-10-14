@@ -256,7 +256,7 @@ export class ClubsResolver {
       : members.filter((member: any) => member.status === "ACTIVE");
   }
 
-  // The counters and flags below are batched per request (see SocialLoaders):
+  // The counter and flag below are batched per request (see SocialLoaders):
   // a list of N clubs costs one query per selected field, not N.
 
   @ResolveField()
@@ -265,21 +265,9 @@ export class ClubsResolver {
   }
 
   @ResolveField()
-  async likesReceivedCount(@Parent() club: any, @Context() context: any) {
-    return this.socialService.loadLikesReceivedCount(context, "CLUB", club.id);
-  }
-
-  @ResolveField()
   async isFollowedByCurrentUser(@Parent() club: any, @Context() context: any) {
     const currentUser = this.getCurrentUser(context);
     if (!currentUser) return false;
     return this.socialService.loadIsFollowing(context, currentUser.userId, "CLUB", club.id);
-  }
-
-  @ResolveField()
-  async isLikedByCurrentUser(@Parent() club: any, @Context() context: any) {
-    const currentUser = this.getCurrentUser(context);
-    if (!currentUser) return false;
-    return this.socialService.loadHasLiked(context, currentUser.userId, "CLUB", club.id);
   }
 }

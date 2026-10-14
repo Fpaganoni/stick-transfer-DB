@@ -93,9 +93,7 @@ type User {
   savedJobs: [JobOpportunity!]!
   followersCount: Int!
   followingCount: Int!
-  likesReceivedCount: Int!
   isFollowedByCurrentUser: Boolean!
-  isLikedByCurrentUser: Boolean!
   """
   Users and clubs following this user, newest first. A club is listed as its owner
   User (same id) with the club logo as avatar. limit 1..100 (default 50), offset >= 0
@@ -146,9 +144,7 @@ type Club {
   createdAt: String!
   updatedAt: String!
   followersCount: Int!
-  likesReceivedCount: Int!
   isFollowedByCurrentUser: Boolean!
-  isLikedByCurrentUser: Boolean!
 }
 
 type ClubManager {
@@ -380,11 +376,6 @@ enum FollowEntityType {
   CLUB
 }
 
-enum LikeEntityType {
-  USER
-  CLUB
-}
-
 enum OAuthProvider {
   GOOGLE
   FACEBOOK
@@ -405,15 +396,6 @@ type Follow {
   followerId: ID!
   followingType: FollowEntityType!
   followingId: ID!
-  createdAt: String!
-}
-
-type Like {
-  id: ID!
-  likerType: LikeEntityType!
-  likerId: ID!
-  likedType: LikeEntityType!
-  likedId: ID!
   createdAt: String!
 }
 
@@ -571,14 +553,10 @@ type Query {
     limit: Int
   ): [ApplicationWithUser!]!
 
-  # Follows & Likes
+  # Follows
   # Same shape and paging as User.followers / User.following.
   followers(entityType: FollowEntityType!, entityId: ID!, limit: Int, offset: Int): [UserBasicInfo!]!
   following(entityType: FollowEntityType!, entityId: ID!, limit: Int, offset: Int): [UserBasicInfo!]!
-  """limit 1..100 (default 50), offset >= 0. Newest first."""
-  profileLikes(entityType: LikeEntityType!, entityId: ID!, limit: Int, offset: Int): [Like!]!
-  """limit 1..100 (default 50), offset >= 0. Newest first."""
-  likesGiven(entityType: LikeEntityType!, entityId: ID!, limit: Int, offset: Int): [Like!]!
 
   # News
   news(filters: NewsFiltersInput, page: Int, limit: Int): NewsPaginatedResult!
@@ -828,20 +806,6 @@ type Mutation {
     followerId: ID!
     followingType: FollowEntityType!
     followingId: ID!
-  ): Boolean!
-
-  # Likes
-  likeProfile(
-    likerType: LikeEntityType!
-    likerId: ID!
-    likedType: LikeEntityType!
-    likedId: ID!
-  ): Like!
-  unlikeProfile(
-    likerType: LikeEntityType!
-    likerId: ID!
-    likedType: LikeEntityType!
-    likedId: ID!
   ): Boolean!
 
   # News (Super Admin only)

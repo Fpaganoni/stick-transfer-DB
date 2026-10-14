@@ -5,14 +5,8 @@ function makeSource(overrides: Partial<SocialBatchSource> = {}) {
     countFollowersBatch: jest.fn(async (_type, ids: string[]) =>
       new Map(ids.filter((id) => id !== "none").map((id) => [id, id.length])),
     ),
-    countLikesReceivedBatch: jest.fn(async (_type, ids: string[]) =>
-      new Map(ids.map((id) => [id, 2])),
-    ),
     findFollowedIds: jest.fn(async (_ft, _fid, _t, ids: string[]) =>
       new Set(ids.filter((id) => id.startsWith("f"))),
-    ),
-    findLikedIds: jest.fn(async (_lt, _lid, _t, ids: string[]) =>
-      new Set(ids.filter((id) => id.startsWith("l"))),
     ),
     ...overrides,
   };
@@ -50,17 +44,6 @@ describe("SocialLoaders", () => {
     expect(source.countFollowersBatch).toHaveBeenCalledTimes(2);
   });
 
-  it("batches likes received the same way", async () => {
-    const source = makeSource();
-    const loaders = new SocialLoaders(source);
-    const ctx = {};
-
-    await Promise.all([loaders.likesReceivedCount(ctx, "CLUB", "a"), loaders.likesReceivedCount(ctx, "CLUB", "b")]);
-
-    expect(source.countLikesReceivedBatch).toHaveBeenCalledTimes(1);
-    expect(source.countLikesReceivedBatch).toHaveBeenCalledWith("CLUB", ["a", "b"]);
-  });
-
   it("resolves 'is followed by me' for a whole list in one query, per viewer", async () => {
     const source = makeSource();
     const loaders = new SocialLoaders(source);
@@ -73,19 +56,6 @@ describe("SocialLoaders", () => {
     expect(flags).toEqual([true, false, true]);
     expect(source.findFollowedIds).toHaveBeenCalledTimes(1);
     expect(source.findFollowedIds).toHaveBeenCalledWith("USER", "viewer-1", "CLUB", ["f1", "x2", "f3"]);
-  });
-
-  it("resolves 'liked by me' for a whole list in one query", async () => {
-    const source = makeSource();
-    const loaders = new SocialLoaders(source);
-    const ctx = {};
-
-    const flags = await Promise.all(
-      ["l1", "x2"].map((id) => loaders.hasLiked(ctx, "viewer-1", "USER", id)),
-    );
-
-    expect(flags).toEqual([true, false]);
-    expect(source.findLikedIds).toHaveBeenCalledTimes(1);
   });
 
   it("never mixes the answers of two viewers", async () => {

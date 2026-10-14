@@ -200,9 +200,7 @@ describe("ClubsResolver - batched field resolvers", () => {
     clubsService = { loadMembers: jest.fn().mockResolvedValue([{ id: "m1" }]) };
     socialService = {
       loadFollowersCount: jest.fn().mockResolvedValue(7),
-      loadLikesReceivedCount: jest.fn().mockResolvedValue(3),
       loadIsFollowing: jest.fn().mockResolvedValue(true),
-      loadHasLiked: jest.fn().mockResolvedValue(true),
     };
     authService = { getUserFromRequest: jest.fn().mockReturnValue({ userId: "me", role: "PLAYER" }) };
     resolver = new ClubsResolver(clubsService, {} as any, {} as any, authService, socialService);
@@ -210,28 +208,22 @@ describe("ClubsResolver - batched field resolvers", () => {
 
   it("reads counters through the per-request loaders", async () => {
     await expect(resolver.followersCount(club, ctx)).resolves.toBe(7);
-    await expect(resolver.likesReceivedCount(club, ctx)).resolves.toBe(3);
 
     expect(socialService.loadFollowersCount).toHaveBeenCalledWith(ctx, "CLUB", "club-1");
-    expect(socialService.loadLikesReceivedCount).toHaveBeenCalledWith(ctx, "CLUB", "club-1");
   });
 
   it("reads the by-current-user flags through the loaders for the signed-in user", async () => {
     await expect(resolver.isFollowedByCurrentUser(club, ctx)).resolves.toBe(true);
-    await expect(resolver.isLikedByCurrentUser(club, ctx)).resolves.toBe(true);
 
     expect(socialService.loadIsFollowing).toHaveBeenCalledWith(ctx, "me", "CLUB", "club-1");
-    expect(socialService.loadHasLiked).toHaveBeenCalledWith(ctx, "me", "CLUB", "club-1");
   });
 
   it("answers false to anonymous viewers without querying", async () => {
     authService.getUserFromRequest.mockReturnValue(null);
 
     await expect(resolver.isFollowedByCurrentUser(club, ctx)).resolves.toBe(false);
-    await expect(resolver.isLikedByCurrentUser(club, ctx)).resolves.toBe(false);
 
     expect(socialService.loadIsFollowing).not.toHaveBeenCalled();
-    expect(socialService.loadHasLiked).not.toHaveBeenCalled();
   });
 
   describe("members", () => {

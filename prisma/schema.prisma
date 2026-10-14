@@ -92,9 +92,6 @@ model User {
   following Follow[] @relation("FollowerUser")
   followers Follow[] @relation("FollowedUser")
 
-  // Likes
-  likesGiven    Like[] @relation("LikerUser")
-  likesReceived Like[] @relation("LikedUser")
 
   // Reports
   reportsFiled    Report[] @relation("ReportsFiled")
@@ -154,7 +151,6 @@ model Club {
   trajectories     Trajectory[]     @relation("ClubTrajectories")
 
   followers Follow[] @relation("FollowedClub")
-  likes     Like[]   @relation("LikedClub")
 
   @@index([name])
   @@index([country, city])
@@ -460,26 +456,6 @@ model Follow {
   @@index([followingId, followingType])
 }
 
-/// Bidirectional profile likes between Player/Coach/Club profiles.
-model Like {
-  id          String         @id @default(uuid())
-  likerId     String
-  likerType   LikeEntityType
-  likedId     String
-  likedType   LikeEntityType
-  likedUserId String?
-  likedClubId String?
-  createdAt   DateTime       @default(now())
-
-  likerUser User? @relation("LikerUser", fields: [likerId], references: [id], onDelete: Cascade, map: "Like_likerUser_fkey")
-  likedUser User? @relation("LikedUser", fields: [likedUserId], references: [id], onDelete: Cascade, map: "Like_likedUser_fkey")
-  likedClub Club? @relation("LikedClub", fields: [likedClubId], references: [id], onDelete: Cascade, map: "Like_likedClub_fkey")
-
-  @@unique([likerId, likerType, likedId, likedType])
-  @@index([likerId, likerType])
-  @@index([likedId, likedType])
-}
-
 model NewsArticle {
   id                 String       @id @default(uuid())
   slug               String       @unique
@@ -565,11 +541,6 @@ enum NewsCategory {
 }
 
 enum FollowEntityType {
-  USER
-  CLUB
-}
-
-enum LikeEntityType {
   USER
   CLUB
 }

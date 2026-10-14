@@ -80,68 +80,6 @@ export class SocialResolver {
     );
   }
 
-  // ─── Likes ─────────────────────────────────────────────────────────────
-
-  @Query(() => [Object])
-  async profileLikes(
-    @Args("entityType") entityType: EntityType,
-    @Args("entityId", { type: () => ID }) entityId: string,
-    @Args("limit", { nullable: true }) limit?: number,
-    @Args("offset", { nullable: true }) offset?: number,
-  ) {
-    return this.socialService.getProfileLikes(entityType, entityId, { limit, offset });
-  }
-
-  @Query(() => [Object])
-  async likesGiven(
-    @Args("entityType") entityType: EntityType,
-    @Args("entityId", { type: () => ID }) entityId: string,
-    @Args("limit", { nullable: true }) limit?: number,
-    @Args("offset", { nullable: true }) offset?: number,
-  ) {
-    return this.socialService.getLikesGiven(entityType, entityId, { limit, offset });
-  }
-
-  @Mutation(() => Object)
-  async likeProfile(
-    @Context() context: any,
-    @Args("likerType") likerType: EntityType,
-    @Args("likerId", { type: () => ID }) likerId: string,
-    @Args("likedType") likedType: EntityType,
-    @Args("likedId", { type: () => ID }) likedId: string,
-  ) {
-    const currentUser = this.requireUser(context);
-    return this.resettingLoaders(context, () =>
-      this.socialService.likeProfile(
-        currentUser.userId,
-        likerType,
-        likerId,
-        likedType,
-        likedId,
-      ),
-    );
-  }
-
-  @Mutation(() => Boolean)
-  async unlikeProfile(
-    @Context() context: any,
-    @Args("likerType") likerType: EntityType,
-    @Args("likerId", { type: () => ID }) likerId: string,
-    @Args("likedType") likedType: EntityType,
-    @Args("likedId", { type: () => ID }) likedId: string,
-  ) {
-    const currentUser = this.requireUser(context);
-    return this.resettingLoaders(context, () =>
-      this.socialService.unlikeProfile(
-        currentUser.userId,
-        likerType,
-        likerId,
-        likedType,
-        likedId,
-      ),
-    );
-  }
-
   /**
    * Mutations of one request run in sequence and may select counters of the
    * affected profile afterwards: drop the per-request cache once the write is

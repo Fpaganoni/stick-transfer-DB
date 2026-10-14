@@ -30,7 +30,7 @@ describe("SocialResolver - follow lists", () => {
   });
 });
 
-describe("SocialResolver - like lists and loader reset", () => {
+describe("SocialResolver - loader reset", () => {
   let resolver: SocialResolver;
   let socialService: any;
   let authService: any;
@@ -38,36 +38,27 @@ describe("SocialResolver - like lists and loader reset", () => {
 
   beforeEach(() => {
     socialService = {
-      getProfileLikes: jest.fn().mockResolvedValue([]),
-      getLikesGiven: jest.fn().mockResolvedValue([]),
       follow: jest.fn().mockResolvedValue({ id: "f1" }),
       unfollow: jest.fn().mockResolvedValue(true),
-      likeProfile: jest.fn().mockResolvedValue({ id: "l1" }),
-      unlikeProfile: jest.fn().mockResolvedValue(true),
       resetLoaders: jest.fn(),
     };
     authService = { getUserFromRequest: jest.fn().mockReturnValue({ userId: "me", role: "PLAYER" }) };
     resolver = new SocialResolver(socialService, authService);
   });
 
-  it("forwards limit and offset to profileLikes and likesGiven", async () => {
-    await resolver.profileLikes("CLUB", "c1", 10, 20);
-    await resolver.likesGiven("USER", "u1", 5);
-
-    expect(socialService.getProfileLikes).toHaveBeenCalledWith("CLUB", "c1", { limit: 10, offset: 20 });
-    expect(socialService.getLikesGiven).toHaveBeenCalledWith("USER", "u1", {
-      limit: 5,
-      offset: undefined,
-    });
-  });
-
   it.each([
     ["follow", () => (r: SocialResolver) => r.follow(ctx, "USER", "me", "CLUB", "c1")],
     ["unfollow", () => (r: SocialResolver) => r.unfollow(ctx, "USER", "me", "CLUB", "c1")],
-    ["likeProfile", () => (r: SocialResolver) => r.likeProfile(ctx, "USER", "me", "CLUB", "c1")],
-    ["unlikeProfile", () => (r: SocialResolver) => r.unlikeProfile(ctx, "USER", "me", "CLUB", "c1")],
   ])("%s resets the request's cached counters so the response is not stale", async (_n, call) => {
     await call()(resolver);
+
+    expect(socialService.resetLoaders).toHaveBeenCalledWith(ctx);
+  });
+
+  it("resets the cache even when the write fails", async () => {
+    socialService.follow.mockRejectedValue(new Error("db down"));
+
+    await expect(resolver.follow(ctx, "USER", "me", "CLUB", "c1")).rejects.toThrow("db down");
 
     expect(socialService.resetLoaders).toHaveBeenCalledWith(ctx);
   });

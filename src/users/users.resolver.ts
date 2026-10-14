@@ -526,7 +526,7 @@ export class UsersResolver {
       : null;
   }
 
-  // followersCount, likesReceivedCount and the by-current-user flags are batched
+  // followersCount and isFollowedByCurrentUser are batched
   // per request (see SocialLoaders): a list of N users costs one query per
   // selected field, not N.
   @ResolveField()
@@ -558,21 +558,9 @@ export class UsersResolver {
   }
 
   @ResolveField()
-  async likesReceivedCount(@Parent() user: any, @Context() context: any) {
-    return this.socialService.loadLikesReceivedCount(context, "USER", user.id);
-  }
-
-  @ResolveField()
   async isFollowedByCurrentUser(@Parent() user: any, @Context() context: any) {
     const currentUser = this.getCurrentUser(context);
     if (!currentUser) return false;
     return this.socialService.loadIsFollowing(context, currentUser.userId, "USER", user.id);
-  }
-
-  @ResolveField()
-  async isLikedByCurrentUser(@Parent() user: any, @Context() context: any) {
-    const currentUser = this.getCurrentUser(context);
-    if (!currentUser) return false;
-    return this.socialService.loadHasLiked(context, currentUser.userId, "USER", user.id);
   }
 }

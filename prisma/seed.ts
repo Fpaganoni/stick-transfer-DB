@@ -27,7 +27,6 @@ async function main() {
     prisma.jobApplication.deleteMany(),
     prisma.jobOpportunity.deleteMany(),
     prisma.follow.deleteMany(),
-    prisma.like.deleteMany(),
     prisma.newsArticle.deleteMany(),
     prisma.trajectory.deleteMany(),
     prisma.umpireCertification.deleteMany(),

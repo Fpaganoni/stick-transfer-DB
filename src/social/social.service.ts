@@ -32,12 +32,6 @@ const FOLLOW_ORDER: Prisma.FollowOrderByWithRelationInput[] = [
   { id: "desc" },
 ];
 
-/** Newest first; id breaks createdAt ties so offset pages never repeat or drop rows. */
-const LIKE_ORDER: Prisma.LikeOrderByWithRelationInput[] = [
-  { createdAt: "desc" },
-  { id: "desc" },
-];
-
 /**
  * A club is listed as the User that owns it (same id), showing the club logo
  * as avatar when it has one.
@@ -202,96 +196,6 @@ export class SocialService {
     });
   }
 
-  // ─── Likes ─────────────────────────────────────────────────────────────
-
-  async likeProfile(
-    currentUserId: string,
-    likerType: EntityType,
-    likerId: string,
-    likedType: EntityType,
-    likedId: string,
-  ) {
-    await this.assertCanActAs(likerType, likerId, currentUserId);
-
-    if (likerType === likedType && likerId === likedId) {
-      throw new BadRequestException("You cannot like yourself");
-    }
-
-    try {
-      const like = await this.prisma.like.create({
-        data: {
-          likerId,
-          likerType,
-          likedId,
-          likedType,
-          likedUserId: likedType === 'USER' ? likedId : null,
-          likedClubId: likedType === 'CLUB' ? likedId : null,
-        },
-      });
-
-      if (likedType === "USER") {
-        this.eventEmitter.emit("social.like_created", {
-          actorId: currentUserId,
-          recipientId: likedId,
-          type: NotificationType.NEW_LIKE,
-          entityId: like.id,
-        });
-      }
-
-      return like;
-    } catch (error) {
-      if (error.code === "P2002") {
-        throw new BadRequestException("Already liked");
-      }
-      throw error;
-    }
-  }
-
-  async unlikeProfile(
-    currentUserId: string,
-    likerType: EntityType,
-    likerId: string,
-    likedType: EntityType,
-    likedId: string,
-  ) {
-    await this.assertCanActAs(likerType, likerId, currentUserId);
-
-    const { count } = await this.prisma.like.deleteMany({
-      where: { likerId, likerType, likedId, likedType },
-    });
-
-    return count > 0;
-  }
-
-  /** Newest first; limit 1..100 (default 50), id breaks createdAt ties so pages never overlap. */
-  async getProfileLikes(
-    entityType: EntityType,
-    entityId: string,
-    pagination: OffsetPagination = {},
-  ) {
-    const { skip, take } = normalizeOffsetPagination(pagination.limit, pagination.offset);
-    return this.prisma.like.findMany({
-      where: { likedType: entityType, likedId: entityId },
-      orderBy: LIKE_ORDER,
-      skip,
-      take,
-    });
-  }
-
-  async getLikesGiven(
-    entityType: EntityType,
-    entityId: string,
-    pagination: OffsetPagination = {},
-  ) {
-    const { skip, take } = normalizeOffsetPagination(pagination.limit, pagination.offset);
-    return this.prisma.like.findMany({
-      where: { likerType: entityType, likerId: entityId },
-      orderBy: LIKE_ORDER,
-      skip,
-      take,
-    });
-  }
-
   // ─── Batched reads (one query per list, see SocialLoaders) ─────────────
 
   async countFollowersBatch(type: EntityType, ids: string[]): Promise<Map<string, number>> {
@@ -301,15 +205,6 @@ export class SocialService {
       _count: { _all: true },
     });
     return new Map(rows.map((row) => [row.followingId, row._count._all]));
-  }
-
-  async countLikesReceivedBatch(type: EntityType, ids: string[]): Promise<Map<string, number>> {
-    const rows = await this.prisma.like.groupBy({
-      by: ["likedId"],
-      where: { likedType: type, likedId: { in: ids } },
-      _count: { _all: true },
-    });
-    return new Map(rows.map((row) => [row.likedId, row._count._all]));
   }
 
   async findFollowedIds(
@@ -325,38 +220,17 @@ export class SocialService {
     return new Set(rows.map((row) => row.followingId));
   }
 
-  async findLikedIds(
-    likerType: EntityType,
-    likerId: string,
-    likedType: EntityType,
-    ids: string[],
-  ): Promise<Set<string>> {
-    const rows = await this.prisma.like.findMany({
-      where: { likerType, likerId, likedType, likedId: { in: ids } },
-      select: { likedId: true },
-    });
-    return new Set(rows.map((row) => row.likedId));
-  }
-
   // Per-request wrappers for the field resolvers of User and Club.
 
   loadFollowersCount(context: object, type: EntityType, id: string) {
     return this.loaders.followersCount(context, type, id);
   }
 
-  loadLikesReceivedCount(context: object, type: EntityType, id: string) {
-    return this.loaders.likesReceivedCount(context, type, id);
-  }
-
   loadIsFollowing(context: object, viewerId: string, type: EntityType, id: string) {
     return this.loaders.isFollowing(context, viewerId, type, id);
   }
 
-  loadHasLiked(context: object, viewerId: string, type: EntityType, id: string) {
-    return this.loaders.hasLiked(context, viewerId, type, id);
-  }
-
-  /** Follow/like mutations call this so later fields of the same request read fresh values. */
+  /** Follow mutations call this so later fields of the same request read fresh values. */
   resetLoaders(context: object): void {
     this.loaders.reset(context);
   }
@@ -372,12 +246,6 @@ export class SocialService {
   async countFollowing(entityType: EntityType, entityId: string) {
     return this.prisma.follow.count({
       where: { followerType: entityType, followerId: entityId },
-    });
-  }
-
-  async countLikesReceived(entityType: EntityType, entityId: string) {
-    return this.prisma.like.count({
-      where: { likedType: entityType, likedId: entityId },
     });
   }
 
@@ -398,24 +266,5 @@ export class SocialService {
       },
     });
     return !!follow;
-  }
-
-  async hasLiked(
-    likerType: EntityType,
-    likerId: string,
-    likedType: EntityType,
-    likedId: string,
-  ) {
-    const like = await this.prisma.like.findUnique({
-      where: {
-        likerId_likerType_likedId_likedType: {
-          likerId,
-          likerType,
-          likedId,
-          likedType,
-        },
-      },
-    });
-    return !!like;
   }
 }
