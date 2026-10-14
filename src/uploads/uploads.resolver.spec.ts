@@ -108,3 +108,73 @@ describe("UploadsResolver - createImageUploadSignature", () => {
     expect(cloudinary.signImageUpload).toHaveBeenCalledWith("USER_AVATAR", "u1");
   });
 });
+
+describe("UploadsResolver - createDocumentUploadSignature", () => {
+  let resolver: UploadsResolver;
+  let cloudinary: any;
+  let authService: any;
+  const ctx = {};
+
+  const asUser = (userId: string, role: string) =>
+    authService.getUserFromRequest.mockReturnValue({ userId, role });
+
+  beforeEach(() => {
+    cloudinary = {
+      signImageUpload: jest.fn(),
+      signDocumentUpload: jest.fn().mockReturnValue({ signature: "doc-sig" }),
+    };
+    authService = { getUserFromRequest: jest.fn() };
+    resolver = new UploadsResolver(cloudinary, authService);
+  });
+
+  it("requires a session (401)", () => {
+    authService.getUserFromRequest.mockReturnValue(null);
+    expect(() => resolver.createDocumentUploadSignature(ctx, "CLUB_VERIFICATION")).toThrow(
+      UnauthorizedException,
+    );
+    expect(cloudinary.signDocumentUpload).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-club roles (403)", () => {
+    for (const role of ["PLAYER", "COACH", "UMPIRE"]) {
+      asUser("u1", role);
+      expect(() => resolver.createDocumentUploadSignature(ctx, "CLUB_VERIFICATION")).toThrow(
+        ForbiddenException,
+      );
+    }
+    expect(cloudinary.signDocumentUpload).not.toHaveBeenCalled();
+  });
+
+  it("signs the club's own folder (club id = user id)", () => {
+    asUser("c1", "CLUB");
+    expect(resolver.createDocumentUploadSignature(ctx, "CLUB_VERIFICATION")).toEqual({
+      signature: "doc-sig",
+    });
+    expect(cloudinary.signDocumentUpload).toHaveBeenCalledWith("CLUB_VERIFICATION", "c1");
+  });
+
+  it("a club cannot sign another club's folder", () => {
+    asUser("c1", "CLUB");
+    expect(() =>
+      resolver.createDocumentUploadSignature(ctx, "CLUB_VERIFICATION", "c2"),
+    ).toThrow(ForbiddenException);
+    expect(cloudinary.signDocumentUpload).not.toHaveBeenCalled();
+  });
+
+  it("a super admin signs the folder of the club it names", () => {
+    asUser("admin", "SUPERADMIN");
+    resolver.createDocumentUploadSignature(ctx, "CLUB_VERIFICATION", "c2");
+    expect(cloudinary.signDocumentUpload).toHaveBeenCalledWith("CLUB_VERIFICATION", "c2");
+  });
+
+  it.each([undefined, "", "../x", "a/b"])(
+    "a super admin must name a safe clubId (got %p)",
+    (clubId) => {
+      asUser("admin", "SUPERADMIN");
+      expect(() =>
+        resolver.createDocumentUploadSignature(ctx, "CLUB_VERIFICATION", clubId as any),
+      ).toThrow(BadRequestException);
+      expect(cloudinary.signDocumentUpload).not.toHaveBeenCalled();
+    },
+  );
+});

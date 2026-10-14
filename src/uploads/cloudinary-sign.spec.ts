@@ -91,3 +91,60 @@ describe("CloudinaryService.signImageUpload", () => {
     );
   });
 });
+
+describe("CloudinaryService.signDocumentUpload", () => {
+  const originalUrl = process.env.CLOUDINARY_URL;
+  let service: CloudinaryService;
+
+  beforeEach(() => {
+    process.env.CLOUDINARY_URL = `cloudinary://${FAKE_KEY}:${FAKE_SECRET}@demo`;
+    cloudinary.config(true);
+    service = new CloudinaryService();
+    jest.useFakeTimers().setSystemTime(new Date("2026-10-14T12:00:00Z"));
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    if (originalUrl === undefined) delete process.env.CLOUDINARY_URL;
+    else process.env.CLOUDINARY_URL = originalUrl;
+    cloudinary.config(true);
+  });
+
+  it("signs exactly the parameters the browser must send", () => {
+    const sig = service.signDocumentUpload("CLUB_VERIFICATION", "c1");
+
+    expect(sig.signature).toBe(
+      expectedSignature({
+        allowed_formats: "pdf,doc,docx",
+        invalidate: true,
+        overwrite: true,
+        public_id: "stick-transfer/clubs/c1/verification-doc",
+        timestamp: sig.timestamp,
+      }),
+    );
+  });
+
+  it("points at the club folder and the auto-detecting upload endpoint", () => {
+    expect(service.signDocumentUpload("CLUB_VERIFICATION", "c1")).toMatchObject({
+      cloudName: "demo",
+      apiKey: FAKE_KEY,
+      folder: "stick-transfer/clubs/c1",
+      publicId: "stick-transfer/clubs/c1/verification-doc",
+      uploadUrl: "https://api.cloudinary.com/v1_1/demo/auto/upload",
+    });
+  });
+
+  it("cannot be reused for another club", () => {
+    const first = service.signDocumentUpload("CLUB_VERIFICATION", "c1").signature;
+    expect(service.signDocumentUpload("CLUB_VERIFICATION", "c2").signature).not.toBe(first);
+  });
+
+  it("fails clearly when Cloudinary is not configured", () => {
+    delete process.env.CLOUDINARY_URL;
+    cloudinary.config(true);
+
+    expect(() => service.signDocumentUpload("CLUB_VERIFICATION", "c1")).toThrow(
+      "Cloudinary is not configured",
+    );
+  });
+});

@@ -5,6 +5,12 @@ import {
   ImageUploadTarget,
   ownerImageFolder,
 } from "./image-url";
+import {
+  DOCUMENT_ALLOWED_FORMATS,
+  DOCUMENT_UPLOAD_TARGETS,
+  DocumentUploadTarget,
+  documentPublicId,
+} from "./document-url";
 
 export interface ImageUploadSignature {
   cloudName: string;
@@ -71,6 +77,44 @@ export class CloudinaryService {
       folder,
       publicId,
       uploadUrl: `https://api.cloudinary.com/v1_1/${cloud_name}/image/upload`,
+    };
+  }
+
+  /**
+   * Signs a direct browser -> Cloudinary document upload (club verification
+   * PDF/DOC/DOCX). Same contract as signImageUpload: the browser sends exactly
+   * file, api_key, timestamp, signature, public_id, overwrite=true,
+   * invalidate=true and allowed_formats=pdf,doc,docx to `uploadUrl`
+   * (/auto/upload picks the image or raw resource type from the file).
+   */
+  signDocumentUpload(target: DocumentUploadTarget, ownerId: string): ImageUploadSignature {
+    const { cloud_name, api_key, api_secret } = cloudinary.config();
+    if (!cloud_name || !api_key || !api_secret) {
+      throw new Error("Cloudinary is not configured");
+    }
+
+    const publicId = documentPublicId(target, ownerId);
+    const timestamp = Math.floor(Date.now() / 1000);
+
+    const signature = cloudinary.utils.api_sign_request(
+      {
+        timestamp,
+        public_id: publicId,
+        overwrite: true,
+        invalidate: true,
+        allowed_formats: DOCUMENT_ALLOWED_FORMATS,
+      },
+      api_secret,
+    );
+
+    return {
+      cloudName: cloud_name,
+      apiKey: api_key,
+      timestamp,
+      signature,
+      folder: ownerImageFolder(DOCUMENT_UPLOAD_TARGETS[target].owner, ownerId),
+      publicId,
+      uploadUrl: `https://api.cloudinary.com/v1_1/${cloud_name}/auto/upload`,
     };
   }
 

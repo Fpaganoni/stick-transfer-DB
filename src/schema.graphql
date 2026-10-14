@@ -336,6 +336,26 @@ type ImageUploadSignature {
   uploadUrl: String!
 }
 
+enum DocumentUploadTarget {
+  CLUB_VERIFICATION
+}
+
+"""
+Everything the browser needs to upload one document (PDF, DOC or DOCX) straight
+to Cloudinary. Same contract as ImageUploadSignature, but send
+allowed_formats=pdf,doc,docx. Then save the secure_url it returns via
+requestClubVerification.
+"""
+type DocumentUploadSignature {
+  cloudName: String!
+  apiKey: String!
+  timestamp: Int!
+  signature: String!
+  folder: String!
+  publicId: String!
+  uploadUrl: String!
+}
+
 enum UserLevel {
   PROFESSIONAL
   AMATEUR
@@ -679,6 +699,17 @@ type Mutation {
     target: ImageUploadTarget!
     clubId: ID
   ): ImageUploadSignature!
+
+  """
+  Signs a direct browser -> Cloudinary upload of a club verification document
+  (PDF, DOC or DOCX) into stick-transfer/clubs/{clubId}. Same access rules as
+  the CLUB_* image targets: the club itself, or a super admin naming clubId.
+  Rate limited to 20 per minute.
+  """
+  createDocumentUploadSignature(
+    target: DocumentUploadTarget!
+    clubId: ID
+  ): DocumentUploadSignature!
 
   # Clubs
   """Creates the club profile for the authenticated user (must have role CLUB)."""
