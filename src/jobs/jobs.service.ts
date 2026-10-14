@@ -23,6 +23,11 @@ const ALREADY_APPLIED_MESSAGE = "You have already applied for this job";
 /** Final club decisions: they cannot be withdrawn, so withdraw + re-apply cannot undo them. */
 const DECIDED_STATUSES = ["REJECTED", "ACCEPTED"] as const;
 
+/** Statuses a club may set when reviewing; PENDING and WITHDRAWN belong to the applicant flow. */
+const CLUB_SETTABLE_STATUSES = ["UNDER_REVIEW", "ACCEPTED", "REJECTED"] as const;
+
+const MAX_REVIEW_NOTES_LENGTH = 2000;
+
 /** Newest first; id breaks timestamp ties so offset pages never repeat or drop rows. */
 const APPLICATION_ORDER: Prisma.JobApplicationOrderByWithRelationInput[] = [
   { appliedAt: "desc" },
@@ -264,9 +269,12 @@ export class JobsService {
     ]);
     const job = await this.prisma.jobOpportunity.findUnique({
       where: { id: data.jobOpportunityId },
-      select: { id: true, positionType: true },
+      select: { id: true, positionType: true, status: true, expiresAt: true },
     });
     if (!job) throw new NotFoundException("Job opportunity not found");
+    if (job.status !== "OPEN" || (job.expiresAt && job.expiresAt.getTime() <= Date.now())) {
+      throw new BadRequestException("This job opportunity is no longer accepting applications");
+    }
     if (
       job.positionType === "UMPIRE" &&
       data.role !== "UMPIRE" &&
@@ -436,6 +444,22 @@ export class JobsService {
     if (!application) throw new NotFoundException("Application not found");
     if (application.jobOpportunity.club.id !== currentUserId) {
       throw new ForbiddenException("You are not the admin of this club");
+    }
+
+    // The club reviews: it cannot reset an application to PENDING, set WITHDRAWN
+    // (only the applicant does) or revive one the applicant withdrew.
+    if (!CLUB_SETTABLE_STATUSES.includes(status as (typeof CLUB_SETTABLE_STATUSES)[number])) {
+      throw new BadRequestException(
+        `status must be one of: ${CLUB_SETTABLE_STATUSES.join(", ")}`,
+      );
+    }
+    if (application.status === "WITHDRAWN") {
+      throw new BadRequestException("A withdrawn application cannot be reviewed");
+    }
+    if (notes && notes.length > MAX_REVIEW_NOTES_LENGTH) {
+      throw new BadRequestException(
+        `notes must be at most ${MAX_REVIEW_NOTES_LENGTH} characters`,
+      );
     }
 
     const updated = await this.prisma.jobApplication.update({

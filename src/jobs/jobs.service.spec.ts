@@ -334,7 +334,54 @@ describe("JobsService", () => {
       prisma.jobOpportunity.findUnique.mockResolvedValue({
         id: "job-1",
         positionType: "PLAYER",
+        status: "OPEN",
+        expiresAt: null,
       });
+    });
+
+    it.each(["CLOSED", "FILLED"])("rejects an application to a %s job", async (status) => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue({
+        id: "job-1",
+        positionType: "PLAYER",
+        status,
+        expiresAt: null,
+      });
+
+      await expect(service.applyForJob(applicationData)).rejects.toThrow(
+        "no longer accepting applications",
+      );
+      expect(prisma.jobApplication.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects an application to an expired job", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue({
+        id: "job-1",
+        positionType: "PLAYER",
+        status: "OPEN",
+        expiresAt: new Date(Date.now() - 60_000),
+      });
+
+      await expect(service.applyForJob(applicationData)).rejects.toThrow(
+        "no longer accepting applications",
+      );
+      expect(prisma.jobApplication.create).not.toHaveBeenCalled();
+    });
+
+    it("accepts an application to an open job that has not expired yet", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue({
+        id: "job-1",
+        positionType: "PLAYER",
+        status: "OPEN",
+        expiresAt: new Date(Date.now() + 86_400_000),
+      });
+      prisma.jobApplication.create.mockResolvedValue({
+        id: "app-1",
+        jobOpportunity: { club: { id: "club-admin-1" } },
+      });
+
+      await service.applyForJob(applicationData);
+
+      expect(prisma.jobApplication.create).toHaveBeenCalledTimes(1);
     });
 
     it("should create an application with cover letter", async () => {
@@ -646,6 +693,64 @@ describe("JobsService", () => {
         service.updateApplicationStatus(currentUserId, applicationId, "ACCEPTED")
       ).rejects.toThrow("Application not found");
     });
+
+    describe("status rules", () => {
+      const stored = (status: string) =>
+        prisma.jobApplication.findUnique.mockResolvedValue({
+          id: applicationId,
+          userId: "user-1",
+          status,
+          jobOpportunity: { club: { id: currentUserId } },
+        });
+
+      beforeEach(() => {
+        prisma.jobApplication.update.mockResolvedValue({ id: applicationId });
+      });
+
+      it.each(["HACKED", "accepted", "", "WITHDRAWN", "PENDING"])(
+        "rejects the target status %p before touching the application",
+        async (status) => {
+          stored("PENDING");
+
+          await expect(
+            service.updateApplicationStatus(currentUserId, applicationId, status),
+          ).rejects.toThrow(BadRequestException);
+          expect(prisma.jobApplication.update).not.toHaveBeenCalled();
+        },
+      );
+
+      it("does not let the club revive an application the player withdrew", async () => {
+        stored("WITHDRAWN");
+
+        await expect(
+          service.updateApplicationStatus(currentUserId, applicationId, "ACCEPTED"),
+        ).rejects.toThrow("withdrawn");
+        expect(prisma.jobApplication.update).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ["PENDING", "UNDER_REVIEW"],
+        ["PENDING", "ACCEPTED"],
+        ["UNDER_REVIEW", "REJECTED"],
+        ["ACCEPTED", "REJECTED"], // the club can correct a decision
+        ["REJECTED", "UNDER_REVIEW"],
+      ])("allows %s -> %s", async (from, to) => {
+        stored(from);
+
+        await service.updateApplicationStatus(currentUserId, applicationId, to);
+
+        expect(prisma.jobApplication.update).toHaveBeenCalledTimes(1);
+      });
+
+      it("rejects notes longer than 2000 characters", async () => {
+        stored("PENDING");
+
+        await expect(
+          service.updateApplicationStatus(currentUserId, applicationId, "ACCEPTED", "x".repeat(2001)),
+        ).rejects.toThrow(BadRequestException);
+        expect(prisma.jobApplication.update).not.toHaveBeenCalled();
+      });
+    });
   });
 
   // ── getApplications + getUserApplications ─────────────────────────────────
@@ -898,6 +1003,8 @@ describe("JobsService", () => {
         prisma.jobOpportunity.findUnique.mockResolvedValue({
           id: "job-u",
           positionType: "UMPIRE",
+          status: "OPEN",
+          expiresAt: null,
         });
         prisma.jobApplication.create.mockResolvedValue({
           id: "app-u",
