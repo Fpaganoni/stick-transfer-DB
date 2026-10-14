@@ -10,6 +10,7 @@ import { NotificationType, Prisma, UmpireModality } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 import { normalizePagination } from "../common/pagination";
 import { AppError } from "../common/errors/app.error";
+import { checkCloudinaryDocumentUrl, throwIfInvalid } from "../common/safe-url";
 import { checkCountry, countryFilter, normalizeCountry } from "../common/geo/countries";
 
 export type JobActor = { userId: string; role: string };
@@ -258,6 +259,9 @@ export class JobsService {
     coverLetter?: string;
     resumeUrl?: string;
   }) {
+    throwIfInvalid([
+      data.resumeUrl ? checkCloudinaryDocumentUrl("resumeUrl", data.resumeUrl) : null,
+    ]);
     const job = await this.prisma.jobOpportunity.findUnique({
       where: { id: data.jobOpportunityId },
       select: { id: true, positionType: true },

@@ -298,6 +298,88 @@ describe("ClubsService", () => {
     });
   });
 
+  describe("updateClub - links and contact", () => {
+    beforeEach(() => {
+      prisma.club.update.mockResolvedValue({ id: "club-1" });
+    });
+
+    const fieldErrorsOf = async (data: Record<string, string>) => {
+      try {
+        await service.updateClub("club-1", data);
+      } catch (error: any) {
+        return error.fields as Array<{ field: string; code: string }>;
+      }
+      return undefined;
+    };
+
+    it.each([
+      ["a javascript: website", { website: "javascript:alert(1)" }, "website", "URL_INVALID"],
+      ["a data: website", { website: "data:text/html,x" }, "website", "URL_INVALID"],
+      ["a website without scheme", { website: "example.com" }, "website", "URL_INVALID"],
+      ["a malformed email", { email: "not-an-email" }, "email", "EMAIL_INVALID"],
+      ["a phone with markup", { phone: "<script>" }, "phone", "PHONE_INVALID"],
+    ])("rejects %s and writes nothing", async (_name, data, field, code) => {
+      const errors = await fieldErrorsOf(data);
+
+      expect(errors).toEqual([expect.objectContaining({ field, code })]);
+      expect(prisma.club.update).not.toHaveBeenCalled();
+    });
+
+    it("reports every invalid contact field at once", async () => {
+      const errors = await fieldErrorsOf({ website: "javascript:x", phone: "abc" });
+
+      expect(errors?.map((e) => e.field)).toEqual(["website", "phone"]);
+    });
+
+    it("saves a valid website, email and phone", async () => {
+      await service.updateClub("club-1", {
+        website: "https://club.example.com",
+        email: "info@club.example.com",
+        phone: "+54 9 11 1234-5678",
+      });
+
+      expect(prisma.club.update.mock.calls[0][0].data).toMatchObject({
+        website: "https://club.example.com",
+        email: "info@club.example.com",
+        phone: "+54 9 11 1234-5678",
+      });
+    });
+
+    it("lets the club clear a contact field with an empty string", async () => {
+      await service.updateClub("club-1", { website: "", email: "", phone: "" });
+
+      expect(prisma.club.update).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("requestVerification - document url", () => {
+    it.each([
+      "javascript:alert(1)",
+      "https://evil.example.com/doc.pdf",
+      "http://res.cloudinary.com/demo/doc.pdf",
+    ])("rejects %s before touching the club", async (documentUrl) => {
+      await expect(service.requestVerification("club-1", documentUrl)).rejects.toMatchObject({
+        fields: [expect.objectContaining({ field: "documentUrl", code: "DOCUMENT_URL_INVALID" })],
+      });
+      expect(prisma.club.findUnique).not.toHaveBeenCalled();
+      expect(prisma.club.update).not.toHaveBeenCalled();
+    });
+
+    it("stores a Cloudinary document", async () => {
+      prisma.club.findUnique.mockResolvedValue({ id: "club-1", isVerified: false, verificationStatus: "NONE" });
+      prisma.club.update.mockResolvedValue({ id: "club-1" });
+      const url = "https://res.cloudinary.com/demo/raw/upload/v1/doc.pdf";
+
+      await service.requestVerification("club-1", url);
+
+      expect(prisma.club.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { verificationStatus: "PENDING", verificationDoc: url },
+        }),
+      );
+    });
+  });
+
   describe("updateClub - images and location", () => {
     const originalUrl = process.env.CLOUDINARY_URL;
     const OWN_LOGO =

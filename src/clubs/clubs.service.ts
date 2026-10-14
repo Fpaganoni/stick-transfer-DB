@@ -11,6 +11,13 @@ import { resolveOwnedImages } from "../uploads/image-url";
 import { AppError } from "../common/errors/app.error";
 import { checkCountry, normalizeCountry } from "../common/geo/countries";
 import { normalizeOffsetPagination } from "../common/pagination";
+import {
+  checkCloudinaryDocumentUrl,
+  checkPhone,
+  checkPublicHttpUrl,
+  throwIfInvalid,
+} from "../common/safe-url";
+import { checkEmail } from "../users/validation/credentials";
 
 /** Club.country is NOT NULL, so a blank value is invalid too. 400 COUNTRY_INVALID. */
 function requireCountryCode(country: string): string {
@@ -301,6 +308,13 @@ export class ClubsService {
       throw new BadRequestException("foundedYear must be between 1800 and 2100");
     }
 
+    // Contact data is rendered as links/mailto on the public club page. "" clears a field.
+    throwIfInvalid([
+      data.website ? checkPublicHttpUrl("website", data.website) : null,
+      data.email ? checkEmail(data.email) : null,
+      data.phone ? checkPhone("phone", data.phone) : null,
+    ]);
+
     // city and country are required columns: null means "unchanged", blank is an error
     const { city, country, logo, coverImage, ...rest } = data;
     if (city != null && !city.trim()) {
@@ -356,6 +370,7 @@ export class ClubsService {
   }
 
   async requestVerification(clubId: string, documentUrl: string) {
+    throwIfInvalid([checkCloudinaryDocumentUrl("documentUrl", documentUrl)]);
     const club = await this.prisma.club.findUnique({ where: { id: clubId } });
     if (!club) throw new BadRequestException(`Club ${clubId} not found`);
     if (club.isVerified) throw new BadRequestException(`Club is already verified`);

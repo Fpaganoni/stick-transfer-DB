@@ -259,6 +259,47 @@ describe("UsersService", () => {
   });
 
   // ── updateUser (umpire) ────────────────────────────────────────────────────
+  describe("updateUser - document urls", () => {
+    it.each([
+      "javascript:alert(1)",
+      "https://evil.example.com/cv.pdf",
+      "http://res.cloudinary.com/demo/cv.pdf",
+    ])("rejects cvUrl %s", async (cvUrl) => {
+      await expect(service.updateUser("user-1", { cvUrl })).rejects.toMatchObject({
+        fields: [expect.objectContaining({ field: "cvUrl", code: "DOCUMENT_URL_INVALID" })],
+      });
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it("rejects an umpire certification file that is not a Cloudinary document", async () => {
+      await expect(
+        service.updateUser("user-1", {
+          umpireCertifications: [
+            { name: "L1", issuer: "CAH", fileUrl: "javascript:alert(1)" },
+          ],
+        } as any),
+      ).rejects.toMatchObject({
+        fields: [
+          expect.objectContaining({
+            field: "umpireCertifications[0].fileUrl",
+            code: "DOCUMENT_URL_INVALID",
+          }),
+        ],
+      });
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it("accepts a Cloudinary cvUrl and lets the user clear it with an empty string", async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: "PLAYER" });
+      prisma.user.update.mockResolvedValue({ id: "user-1" });
+
+      await service.updateUser("user-1", { cvUrl: "https://res.cloudinary.com/demo/raw/upload/cv.pdf" });
+      await service.updateUser("user-1", { cvUrl: "" });
+
+      expect(prisma.user.update).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe("updateUser - umpire fields", () => {
     it("rejects umpire fields for non-umpire roles", async () => {
       prisma.user.findUnique.mockResolvedValue({ role: "PLAYER" });
@@ -321,14 +362,14 @@ describe("UsersService", () => {
   // ── updateUser ─────────────────────────────────────────────────────────────
   describe("updateUser", () => {
     it("debería actualizar datos básicos del usuario", async () => {
-      const mockUser = { id: "user-1", bio: "Nueva bio", cvUrl: "https://example.com/cv.pdf" };
+      const mockUser = { id: "user-1", bio: "Nueva bio", cvUrl: "https://res.cloudinary.com/demo/raw/upload/v1/cv.pdf" };
       prisma.user.update.mockResolvedValue(mockUser);
 
-      const result = await service.updateUser("user-1", { bio: "Nueva bio", cvUrl: "https://example.com/cv.pdf" });
+      const result = await service.updateUser("user-1", { bio: "Nueva bio", cvUrl: "https://res.cloudinary.com/demo/raw/upload/v1/cv.pdf" });
 
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: "user-1" },
-        data: { bio: "Nueva bio", cvUrl: "https://example.com/cv.pdf" },
+        data: { bio: "Nueva bio", cvUrl: "https://res.cloudinary.com/demo/raw/upload/v1/cv.pdf" },
       });
       expect(result).toEqual(mockUser);
     });

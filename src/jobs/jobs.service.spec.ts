@@ -359,6 +359,33 @@ describe("JobsService", () => {
       expect(result).toEqual(mockApplication);
     });
 
+    it.each([
+      "javascript:alert(1)",
+      "https://evil.example.com/cv.pdf",
+      "http://res.cloudinary.com/demo/cv.pdf",
+    ])("rejects resumeUrl %s without creating the application", async (resumeUrl) => {
+      await expect(
+        service.applyForJob({ ...applicationData, resumeUrl }),
+      ).rejects.toMatchObject({
+        fields: [expect.objectContaining({ field: "resumeUrl", code: "DOCUMENT_URL_INVALID" })],
+      });
+      expect(prisma.jobApplication.create).not.toHaveBeenCalled();
+    });
+
+    it("accepts a Cloudinary resumeUrl", async () => {
+      prisma.jobApplication.create.mockResolvedValue({
+        id: "app-1",
+        jobOpportunity: { club: { id: "club-admin-1" } },
+      });
+      const resumeUrl = "https://res.cloudinary.com/demo/raw/upload/v1/cv.pdf";
+
+      await service.applyForJob({ ...applicationData, resumeUrl });
+
+      expect(prisma.jobApplication.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ resumeUrl }) }),
+      );
+    });
+
     it("reports 'already applied' as a 409 Conflict, not a masked 500", async () => {
       prisma.jobApplication.create.mockRejectedValue({ code: "P2002" });
 

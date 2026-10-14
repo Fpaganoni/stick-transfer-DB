@@ -7,6 +7,7 @@ import { PrismaService } from "../prisma.service";
 import * as bcrypt from "bcrypt";
 import { resolveOwnedImages } from "../uploads/image-url";
 import { normalizeOffsetPagination } from "../common/pagination";
+import { checkCloudinaryDocumentUrl, throwIfInvalid } from "../common/safe-url";
 
 @Injectable()
 export class UsersService {
@@ -195,6 +196,16 @@ export class UsersService {
         throw new BadRequestException("A trajectory cannot end before it starts");
       }
     }
+
+    // Documents are rendered as links on public profiles. "" clears the CV.
+    throwIfInvalid([
+      userUpdateData.cvUrl ? checkCloudinaryDocumentUrl("cvUrl", userUpdateData.cvUrl) : null,
+      ...(umpireCertifications ?? []).map((c, i) =>
+        c?.fileUrl
+          ? checkCloudinaryDocumentUrl(`umpireCertifications[${i}].fileUrl`, c.fileUrl)
+          : null,
+      ),
+    ]);
 
     const images = await this.validatedImages(
       id,
