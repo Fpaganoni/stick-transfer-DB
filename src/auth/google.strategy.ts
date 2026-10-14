@@ -74,8 +74,13 @@ export class GoogleStrategy extends PassportStrategy(Strategy, "google") {
         );
       }
 
+      // passport-google-oauth20 exposes the flag as emails[0].verified and in the raw payload
+      const rawVerified = profile.emails?.[0]?.verified ?? profile._json?.email_verified;
+      const emailVerified = rawVerified === true || rawVerified === "true";
+
       const login = await this.authService.oauthLogin({
         email,
+        emailVerified,
         displayName: profile.displayName,
         provider: "GOOGLE",
         socialId: profile.id, // Google's stable unique user ID

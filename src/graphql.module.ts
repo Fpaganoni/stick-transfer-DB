@@ -3,6 +3,8 @@ import { GraphQLModule } from "@nestjs/graphql";
 import { ApolloDriver, ApolloDriverConfig } from "@nestjs/apollo";
 import depthLimit from "graphql-depth-limit";
 import { formatGraphqlError } from "./common/errors/format-error";
+import { AuthModule } from "./auth/auth.module";
+import { AuthService } from "./auth/auth.service";
 
 /**
  * Everything except the schema source, exported so tests can boot the exact
@@ -23,9 +25,21 @@ export const baseGraphqlConfig: ApolloDriverConfig = {
 
 @Module({
   imports: [
-    GraphQLModule.forRoot<ApolloDriverConfig>({
-      ...baseGraphqlConfig,
-      typePaths: ["./**/*.graphql"],
+    GraphQLModule.forRootAsync<ApolloDriverConfig>({
+      driver: ApolloDriver,
+      imports: [AuthModule],
+      inject: [AuthService],
+      useFactory: (authService: AuthService) => ({
+        ...baseGraphqlConfig,
+        typePaths: ["./**/*.graphql"],
+        // Revoked sessions (tokenVersion behind) are flagged here, once per
+        // request, so the synchronous getUserFromRequest in resolvers sees an
+        // anonymous caller.
+        context: async ({ req, res }: { req: any; res: any }) => {
+          await authService.resolveSession(req);
+          return { req, res };
+        },
+      }),
     }),
   ],
 })

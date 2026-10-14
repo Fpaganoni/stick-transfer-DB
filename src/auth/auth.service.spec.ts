@@ -123,8 +123,15 @@ describe("AuthService", () => {
         username: "puck_king",
         sub: "user-1",
         role: "PLAYER",
+        tv: 0,
       });
       expect(result).toEqual({ access_token: "mocked-jwt-token" });
+    });
+
+    it("embeds the user's current tokenVersion so older tokens can be revoked", async () => {
+      await service.login({ id: "user-1", username: "u", role: "PLAYER", tokenVersion: 3 });
+
+      expect(mockJwtService.sign).toHaveBeenCalledWith(expect.objectContaining({ tv: 3 }));
     });
   });
 
@@ -135,6 +142,7 @@ describe("AuthService", () => {
       displayName: "Coach Franco",
       provider: "GOOGLE" as const,
       socialId: "google-sub-123",
+      emailVerified: true,
     };
 
     const existingOAuthUser = {
@@ -172,10 +180,45 @@ describe("AuthService", () => {
 
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: "user-legacy" },
-        data: { authProvider: "GOOGLE", socialId: "google-sub-123" },
+        data: {
+          authProvider: "GOOGLE",
+          socialId: "google-sub-123",
+          // An unverified registration may have set this password: only the
+          // Google-verified owner keeps access, and older sessions die.
+          password: null,
+          isEmailVerified: true,
+          tokenVersion: { increment: 1 },
+        },
       });
       expect(result).toEqual({ access_token: "mocked-jwt-token" });
     });
+
+    it("refuses to relink an account already tied to a different Google identity", async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue({
+        id: "user-legacy",
+        email: "coach@hockey.com",
+        authProvider: "GOOGLE",
+        socialId: "another-google-sub",
+      });
+
+      await expect(service.oauthLogin(googleProfile)).rejects.toThrow(UnauthorizedException);
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it.each([false, undefined])(
+      "rejects a Google email that is not verified (emailVerified=%p) without linking or creating",
+      async (emailVerified) => {
+        prisma.user.findFirst.mockResolvedValue(null);
+        prisma.user.findUnique.mockResolvedValue({ id: "user-legacy", email: "coach@hockey.com" });
+
+        await expect(
+          service.oauthLogin({ ...googleProfile, emailVerified }),
+        ).rejects.toThrow(UnauthorizedException);
+        expect(prisma.user.update).not.toHaveBeenCalled();
+        expect(prisma.user.create).not.toHaveBeenCalled();
+      },
+    );
 
     it("should create new user when no account exists", async () => {
       prisma.user.findFirst
@@ -346,6 +389,100 @@ describe("AuthService", () => {
       expect(header).toContain("Secure");
       expect(header).toContain("HttpOnly");
       expect(header).toContain("Expires=Thu, 01 Jan 1970");
+    });
+  });
+
+  // ── session revocation (tokenVersion) ─────────────────────────────────────
+  describe("resolveSession", () => {
+    const withToken = (token = "cookie-token") => ({
+      cookies: { [AUTH_COOKIE_NAME]: token },
+    });
+    const verifies = (payload: object) => {
+      (mockJwtService as any).verify = jest.fn().mockReturnValue(payload);
+    };
+
+    it("keeps the session when the token version matches the user's", async () => {
+      verifies({ sub: "user-1", role: "PLAYER", tv: 2 });
+      prisma.user.findUnique.mockResolvedValue({ tokenVersion: 2 });
+      const req: any = withToken();
+
+      await service.resolveSession(req);
+
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { id: "user-1" },
+        select: { tokenVersion: true },
+      });
+      expect(req.sessionRevoked).toBeUndefined();
+      expect(service.getUserFromRequest(req)).toEqual({ userId: "user-1", role: "PLAYER" });
+    });
+
+    it("revokes the session when the user's version moved past the token's", async () => {
+      verifies({ sub: "user-1", role: "PLAYER", tv: 1 });
+      prisma.user.findUnique.mockResolvedValue({ tokenVersion: 2 });
+      const req: any = withToken();
+
+      await service.resolveSession(req);
+
+      expect(req.sessionRevoked).toBe(true);
+      expect(service.getUserFromRequest(req)).toBeNull();
+    });
+
+    it("treats a token issued before tokenVersion existed as version 0", async () => {
+      verifies({ sub: "user-1", role: "PLAYER" });
+      prisma.user.findUnique.mockResolvedValue({ tokenVersion: 0 });
+      const req: any = withToken();
+
+      await service.resolveSession(req);
+
+      expect(req.sessionRevoked).toBeUndefined();
+    });
+
+    it("revokes a legacy token once the version was bumped", async () => {
+      verifies({ sub: "user-1", role: "PLAYER" });
+      prisma.user.findUnique.mockResolvedValue({ tokenVersion: 1 });
+      const req: any = withToken();
+
+      await service.resolveSession(req);
+
+      expect(req.sessionRevoked).toBe(true);
+    });
+
+    it("revokes the session when the user no longer exists", async () => {
+      verifies({ sub: "ghost", role: "PLAYER", tv: 0 });
+      prisma.user.findUnique.mockResolvedValue(null);
+      const req: any = withToken();
+
+      await service.resolveSession(req);
+
+      expect(req.sessionRevoked).toBe(true);
+    });
+
+    it("skips the database when there is no token or it is invalid", async () => {
+      const anonymous: any = { cookies: {} };
+      await service.resolveSession(anonymous);
+
+      (mockJwtService as any).verify = jest.fn().mockImplementation(() => {
+        throw new Error("jwt expired");
+      });
+      const expired: any = withToken("bad");
+      await service.resolveSession(expired);
+
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(anonymous.sessionRevoked).toBeUndefined();
+      expect(expired.sessionRevoked).toBeUndefined();
+    });
+  });
+
+  describe("revokeSessions", () => {
+    it("bumps tokenVersion so every issued token stops working", async () => {
+      prisma.user.update.mockResolvedValue({ id: "user-1" });
+
+      await service.revokeSessions("user-1");
+
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: "user-1" },
+        data: { tokenVersion: { increment: 1 } },
+      });
     });
   });
 

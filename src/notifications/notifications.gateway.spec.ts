@@ -29,25 +29,28 @@ describe("NotificationsGateway handshake hardening", () => {
 });
 
 describe("NotificationsGateway", () => {
-  let authService: { getUserFromRequest: jest.Mock };
+  let authService: { getUserFromRequest: jest.Mock; resolveSession: jest.Mock };
   let gateway: NotificationsGateway;
 
   const authenticateAs = (userId: string) =>
     authService.getUserFromRequest.mockReturnValue({ userId, role: "PLAYER" });
 
   beforeEach(() => {
-    authService = { getUserFromRequest: jest.fn().mockReturnValue(null) };
+    authService = {
+      getUserFromRequest: jest.fn().mockReturnValue(null),
+      resolveSession: jest.fn().mockResolvedValue(undefined),
+    };
     gateway = new NotificationsGateway(authService as any);
   });
 
   describe("handleConnection", () => {
-    it("joins the verified user's own room using the session cookie", () => {
+    it("joins the verified user's own room using the session cookie", async () => {
       authenticateAs("user-1");
       const client = buildClient({
         headers: { cookie: `theme=dark; ${AUTH_COOKIE_NAME}=jwt-token; other=1` },
       });
 
-      gateway.handleConnection(client as any);
+      await gateway.handleConnection(client as any);
 
       expect(authService.getUserFromRequest).toHaveBeenCalledWith({
         cookies: { [AUTH_COOKIE_NAME]: "jwt-token" },
@@ -58,11 +61,11 @@ describe("NotificationsGateway", () => {
       expect(client.disconnect).not.toHaveBeenCalled();
     });
 
-    it("accepts an Authorization: Bearer header for non-browser clients", () => {
+    it("accepts an Authorization: Bearer header for non-browser clients", async () => {
       authenticateAs("user-1");
       const client = buildClient({ headers: { authorization: "Bearer header-token" } });
 
-      gateway.handleConnection(client as any);
+      await gateway.handleConnection(client as any);
 
       expect(authService.getUserFromRequest).toHaveBeenCalledWith({
         cookies: {},
@@ -71,11 +74,11 @@ describe("NotificationsGateway", () => {
       expect(client.join).toHaveBeenCalledWith(userRoom("user-1"));
     });
 
-    it("accepts handshake.auth.token (socket.io `auth` option) as a Bearer token", () => {
+    it("accepts handshake.auth.token (socket.io `auth` option) as a Bearer token", async () => {
       authenticateAs("user-1");
       const client = buildClient({ auth: { token: "auth-token" } });
 
-      gateway.handleConnection(client as any);
+      await gateway.handleConnection(client as any);
 
       expect(authService.getUserFromRequest).toHaveBeenCalledWith({
         cookies: {},
@@ -84,28 +87,45 @@ describe("NotificationsGateway", () => {
       expect(client.join).toHaveBeenCalledWith(userRoom("user-1"));
     });
 
-    it("disconnects an anonymous socket without joining any room", () => {
+    it("disconnects an anonymous socket without joining any room", async () => {
       const client = buildClient();
 
-      gateway.handleConnection(client as any);
+      await gateway.handleConnection(client as any);
 
       expect(client.disconnect).toHaveBeenCalledWith(true);
       expect(client.join).not.toHaveBeenCalled();
     });
 
-    it("disconnects a socket whose token does not verify", () => {
+    it("disconnects a socket whose session was revoked after the token was issued", async () => {
+      authenticateAs("user-1");
+      authService.resolveSession.mockImplementation(async (req: any) => {
+        req.sessionRevoked = true;
+      });
+      authService.getUserFromRequest.mockImplementation((req: any) =>
+        req.sessionRevoked ? null : { userId: "user-1", role: "PLAYER" },
+      );
+      const client = buildClient({ headers: { cookie: `${AUTH_COOKIE_NAME}=old-token` } });
+
+      await gateway.handleConnection(client as any);
+
+      expect(authService.resolveSession).toHaveBeenCalledTimes(1);
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+      expect(client.join).not.toHaveBeenCalled();
+    });
+
+    it("disconnects a socket whose token does not verify", async () => {
       const client = buildClient({ headers: { cookie: `${AUTH_COOKIE_NAME}=forged` } });
 
-      gateway.handleConnection(client as any);
+      await gateway.handleConnection(client as any);
 
       expect(client.disconnect).toHaveBeenCalledWith(true);
       expect(client.join).not.toHaveBeenCalled();
     });
 
-    it("survives a malformed cookie header", () => {
+    it("survives a malformed cookie header", async () => {
       const client = buildClient({ headers: { cookie: `${AUTH_COOKIE_NAME}=%E0%A4%A; ;=` } });
 
-      expect(() => gateway.handleConnection(client as any)).not.toThrow();
+      await expect(gateway.handleConnection(client as any)).resolves.toBeUndefined();
       expect(client.disconnect).toHaveBeenCalledWith(true);
     });
   });
@@ -116,13 +136,13 @@ describe("NotificationsGateway", () => {
 
     const nowSeconds = () => Math.floor(Date.now() / 1000);
 
-    it("disconnects the socket when its JWT expires, not later", () => {
+    it("disconnects the socket when its JWT expires, not later", async () => {
       authenticateAs("user-1");
       const client = buildClient({
         headers: { cookie: `${AUTH_COOKIE_NAME}=${tokenExpiringAt(nowSeconds() + 60)}` },
       });
 
-      gateway.handleConnection(client as any);
+      await gateway.handleConnection(client as any);
 
       jest.advanceTimersByTime(59_000);
       expect(client.disconnect).not.toHaveBeenCalled();
@@ -130,12 +150,12 @@ describe("NotificationsGateway", () => {
       expect(client.disconnect).toHaveBeenCalledWith(true);
     });
 
-    it("stops the timer when the client disconnects first", () => {
+    it("stops the timer when the client disconnects first", async () => {
       authenticateAs("user-1");
       const client = buildClient({
         headers: { cookie: `${AUTH_COOKIE_NAME}=${tokenExpiringAt(nowSeconds() + 60)}` },
       });
-      gateway.handleConnection(client as any);
+      await gateway.handleConnection(client as any);
 
       const [event, onDisconnect] = client.on.mock.calls[0];
       expect(event).toBe("disconnect");
@@ -145,26 +165,26 @@ describe("NotificationsGateway", () => {
       expect(client.disconnect).not.toHaveBeenCalled();
     });
 
-    it("also covers Bearer and auth.token handshakes", () => {
+    it("also covers Bearer and auth.token handshakes", async () => {
       authenticateAs("user-1");
       const bearer = buildClient({
         headers: { authorization: `Bearer ${tokenExpiringAt(nowSeconds() + 10)}` },
       });
       const viaAuth = buildClient({ auth: { token: tokenExpiringAt(nowSeconds() + 10) } });
 
-      gateway.handleConnection(bearer as any);
-      gateway.handleConnection(viaAuth as any);
+      await gateway.handleConnection(bearer as any);
+      await gateway.handleConnection(viaAuth as any);
       jest.advanceTimersByTime(11_000);
 
       expect(bearer.disconnect).toHaveBeenCalledWith(true);
       expect(viaAuth.disconnect).toHaveBeenCalledWith(true);
     });
 
-    it("does not crash or schedule anything for a token whose exp cannot be read", () => {
+    it("does not crash or schedule anything for a token whose exp cannot be read", async () => {
       authenticateAs("user-1");
       const client = buildClient({ headers: { cookie: `${AUTH_COOKIE_NAME}=opaque-token` } });
 
-      expect(() => gateway.handleConnection(client as any)).not.toThrow();
+      await expect(gateway.handleConnection(client as any)).resolves.toBeUndefined();
       jest.advanceTimersByTime(10_000_000);
 
       expect(client.on).not.toHaveBeenCalled();

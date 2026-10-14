@@ -6,7 +6,7 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { AuthService } from '../auth/auth.service';
+import { AuthService, SessionRequest } from '../auth/auth.service';
 import { AUTH_COOKIE_NAME } from '../auth/auth.constants';
 import { allowRequestFromAllowedOrigin, isAllowedOrigin } from '../common/cors';
 
@@ -65,16 +65,20 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection 
    * socket.io `auth.token` option), verified like any other request. Anonymous
    * or forged sockets are dropped before they can join a room.
    */
-  handleConnection(client: Socket) {
+  async handleConnection(client: Socket) {
     const { headers, auth } = client.handshake;
     const cookie = readCookie(headers.cookie, AUTH_COOKIE_NAME);
     const authToken = typeof auth?.token === 'string' ? auth.token : undefined;
     const authorization = headers.authorization ?? (authToken ? `Bearer ${authToken}` : undefined);
 
-    const user = this.authService.getUserFromRequest({
+    const request: SessionRequest = {
       cookies: cookie ? { [AUTH_COOKIE_NAME]: cookie } : {},
       headers: { authorization },
-    });
+    };
+    // A token whose version was revoked (logout, ban, password change) must not
+    // open a socket either.
+    await this.authService.resolveSession(request);
+    const user = this.authService.getUserFromRequest(request);
     if (!user) {
       client.disconnect(true);
       return;

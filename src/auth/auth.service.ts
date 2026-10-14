@@ -19,6 +19,14 @@ import {
 const DUMMY_PASSWORD_HASH =
   "$2b$10$.c5VQyMPg.0lkdoQPUHHBeNA5pB9MhgfkM38EnEbnzJki6C1k/Jby";
 
+/** The slice of an HTTP/socket request the session helpers read and annotate. */
+export interface SessionRequest {
+  cookies?: Record<string, string>;
+  headers?: { authorization?: string };
+  /** Set by resolveSession when the token's version is behind the user's. */
+  sessionRevoked?: boolean;
+}
+
 /**
  * AuthService — handles all authentication logic:
  *  - Email/password login (validateUser + login)
@@ -59,8 +67,24 @@ export class AuthService {
    * Payload includes: sub (user ID), username, role.
    */
   async login(user: any) {
-    const payload = { username: user.username, sub: user.id, role: user.role };
+    const payload = {
+      username: user.username,
+      sub: user.id,
+      role: user.role,
+      tv: user.tokenVersion ?? 0,
+    };
     return { access_token: this.jwtService.sign(payload) };
+  }
+
+  /**
+   * Revokes every session of the user: tokens carry the version they were
+   * issued with, and resolveSession rejects any that is now behind.
+   */
+  async revokeSessions(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { tokenVersion: { increment: 1 } },
+    });
   }
 
   /**
@@ -88,21 +112,58 @@ export class AuthService {
    * Used by resolvers that need to know "who's asking" (e.g. isLikedByCurrentUser,
    * follow/like/save mutations, requireSuperAdmin) without enforcing a hard guard.
    */
-  getUserFromRequest(req?: { cookies?: Record<string, string>; headers?: { authorization?: string } }): {
+  getUserFromRequest(req?: SessionRequest): {
     userId: string;
     role: string;
   } | null {
-    const token =
-      req?.cookies?.[AUTH_COOKIE_NAME] ??
-      (req?.headers?.authorization?.startsWith("Bearer ")
-        ? req.headers.authorization.slice(7)
-        : null);
+    if (req?.sessionRevoked) return null;
+    const token = this.readToken(req);
     if (!token) return null;
     try {
       const payload = this.jwtService.verify(token);
       return { userId: payload.sub, role: payload.role };
     } catch {
       return null;
+    }
+  }
+
+  /** Cookie first, then the Bearer header (cookie-migration fallback). */
+  private readToken(req?: SessionRequest): string | null {
+    return (
+      req?.cookies?.[AUTH_COOKIE_NAME] ??
+      (req?.headers?.authorization?.startsWith("Bearer ")
+        ? req.headers.authorization.slice(7)
+        : null)
+    );
+  }
+
+  /**
+   * Checks the token's version against the user's current one, once per request,
+   * and flags the request as revoked when it is behind (or the user is gone).
+   * getUserFromRequest stays synchronous and simply honors the flag, so every
+   * resolver is covered without becoming async. Call it before resolvers run
+   * (GraphQL context, socket handshake). Tokens issued before tokenVersion
+   * existed have no `tv` and count as version 0.
+   */
+  async resolveSession(req?: SessionRequest): Promise<void> {
+    const token = this.readToken(req);
+    if (!req || !token) return;
+
+    let payload: { sub?: string; tv?: number };
+    try {
+      payload = this.jwtService.verify(token);
+    } catch {
+      return; // invalid/expired tokens are already treated as anonymous
+    }
+
+    const user = payload.sub
+      ? await this.prisma.user.findUnique({
+          where: { id: payload.sub },
+          select: { tokenVersion: true },
+        })
+      : null;
+    if (!user || user.tokenVersion !== (payload.tv ?? 0)) {
+      req.sessionRevoked = true;
     }
   }
 
@@ -124,6 +185,8 @@ export class AuthService {
     displayName?: string;
     provider: "GOOGLE";
     socialId: string;
+    /** Provider's own verdict on the email (Google: email_verified). */
+    emailVerified?: boolean;
   }) {
     // Step 1: Look up by socialId + provider — fastest path for returning users.
     let user = await this.prisma.user.findFirst({
@@ -135,18 +198,36 @@ export class AuthService {
 
     if (user) return this.login(user);
 
+    // Linking or creating by email is only safe when the provider vouches for it.
+    if (profile.email && profile.emailVerified !== true) {
+      throw new UnauthorizedException(
+        "Unable to authenticate: the Google account email is not verified.",
+      );
+    }
+
     // Step 2: Look up by email to link existing email/password account
     const email = profile.email ? normalizeEmail(profile.email) : undefined;
     if (email) {
       user = await this.prisma.user.findUnique({ where: { email } });
 
       if (user) {
-        // Link OAuth provider to existing account
+        // Never take over an account that already belongs to another Google identity.
+        if (user.authProvider === profile.provider && user.socialId && user.socialId !== profile.socialId) {
+          throw new UnauthorizedException(
+            "Unable to authenticate: this email is linked to a different Google account.",
+          );
+        }
+        // Link OAuth provider to existing account. A password set before the
+        // email was ever verified could belong to someone who only knew the
+        // address (pre-hijack), so it is dropped and older sessions are revoked.
         user = await this.prisma.user.update({
           where: { id: user.id },
           data: {
             authProvider: profile.provider,
             socialId: profile.socialId,
+            password: null,
+            isEmailVerified: true,
+            tokenVersion: { increment: 1 },
           },
         });
         return this.login(user);
@@ -183,6 +264,7 @@ export class AuthService {
         username,
         name: profile.displayName || username,
         password: null, // OAuth users never have a password
+        isEmailVerified: true, // the provider vouched for it (checked above)
         authProvider: profile.provider,
         socialId: profile.socialId,
       },

@@ -46,6 +46,9 @@ model User {
   isVerified         Boolean             @default(false)
   isEmailVerified    Boolean             @default(false)
   isActive           Boolean             @default(true)
+  /// SECURITY: Embedded in every session JWT as `tv`. Bumping it revokes all
+  /// tokens issued before (logout, password change, OAuth link, ban).
+  tokenVersion       Int                 @default(0)
   /// The OAuth provider used to authenticate this user.
   /// SECURITY: Used to prevent cross-provider account collisions.
   authProvider       AuthProvider        @default(EMAIL)
