@@ -232,6 +232,21 @@ describe("AdminService", () => {
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ["PLAYER", "CLUB"],
+      ["CLUB", "PLAYER"],
+    ])(
+      "refuses %s -> %s with the stable ROLE_CHANGE_NOT_ALLOWED code (400) for the front",
+      async (from, to) => {
+        prisma.user.findUnique.mockResolvedValue({ role: from });
+
+        await expect(service.changeUserRole("user-1", to as any)).rejects.toMatchObject({
+          code: "ROLE_CHANGE_NOT_ALLOWED",
+          status: 400,
+        });
+      },
+    );
+
     it("allows a no-op CLUB to CLUB change", async () => {
       prisma.user.findUnique.mockResolvedValue({ role: "CLUB" });
       prisma.user.update.mockResolvedValue({ id: "club-1", role: "CLUB" });

@@ -333,7 +333,8 @@ con un assert: falla si dos clubes comparten `clubNameKey` o si algun CLUB no ti
   (`register`). Compara ignorando mayusculas, acentos y espacios repetidos.
 - `NAME_INVALID` (400, `VALIDATION_ERROR`, `field: "name" | "clubName" | "managedByFirstName" | "managedByLastName"`): el
   nombre trae caracteres de control o invisibles. `NAME_TOO_LONG` tambien aplica a `managedBy*` (maximo 100).
-- `adminChangeUserRole` a o desde CLUB -> 400 `Roles cannot be changed to or from CLUB`.
+- `adminChangeUserRole` a o desde CLUB -> 400 `Roles cannot be changed to or from CLUB`, con `extensions.code: "ROLE_CHANGE_NOT_ALLOWED"`
+  (codigo estable: el front mapea el codigo, no el texto).
 - Ya existentes que ahora tambien salen de `updateClub`: `USERNAME_TAKEN` (409, `field: "username"`), `IMAGE_URL_INVALID`
   (`field: "logo" | "coverImage"`), `COUNTRY_INVALID`, `FIELD_REQUIRED` (`field: "city"`).
 

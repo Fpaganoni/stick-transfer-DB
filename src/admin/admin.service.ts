@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { Role } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
+import { AppError } from "../common/errors/app.error";
 
 @Injectable()
 export class AdminService {
@@ -15,7 +16,7 @@ export class AdminService {
     });
     if (!current) throw new NotFoundException("User not found");
     if (current.role !== role && (current.role === "CLUB" || role === "CLUB")) {
-      throw new BadRequestException("Roles cannot be changed to or from CLUB");
+      throw AppError.roleChangeNotAllowed();
     }
     return this.prisma.user.update({
       where: { id: userId },

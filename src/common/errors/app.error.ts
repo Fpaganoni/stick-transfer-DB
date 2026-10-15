@@ -11,6 +11,7 @@ export type AppErrorCode =
   | "CLUB_NAME_TAKEN"
   | "JOB_HAS_UNANSWERED_APPLICATIONS"
   | "JOB_FILLED_COOLDOWN"
+  | "ROLE_CHANGE_NOT_ALLOWED"
   | "INVALID_CREDENTIALS"
   | "RATE_LIMITED"
   | "INTERNAL_ERROR";
@@ -89,6 +90,15 @@ export class AppError extends HttpException {
       "JOB_FILLED_COOLDOWN",
       `A filled job opportunity can be deleted from ${availableAt.toISOString()}`,
       HttpStatus.CONFLICT,
+    );
+  }
+
+  /** A role cannot be switched to or from CLUB: a club needs its Club row, name key and place. */
+  static roleChangeNotAllowed() {
+    return new AppError(
+      "ROLE_CHANGE_NOT_ALLOWED",
+      "Roles cannot be changed to or from CLUB",
+      HttpStatus.BAD_REQUEST,
     );
   }
 
