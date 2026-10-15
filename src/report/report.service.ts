@@ -24,11 +24,13 @@ export class ReportService {
       throw new BadRequestException("You cannot report yourself.");
     }
 
+    const targetType = await this.resolveTargetType(data.targetType, data.targetId);
+
     try {
       const report = await this.prisma.report.create({
         data: {
           reporterId: data.reporterId,
-          targetType: data.targetType,
+          targetType,
           targetId: data.targetId,
           reason: data.reason,
           description: data.description,
@@ -57,6 +59,25 @@ export class ReportService {
       }
       throw error;
     }
+  }
+
+  /**
+   * A CLUB account is reported ONLY on the CLUB axis (its Club row shares the
+   * account's id). A USER target whose id belongs to a CLUB account is stored
+   * as CLUB instead of failing, so old clients keep working and the unique
+   * (reporterId, targetType, targetId) index also catches a repeat through the
+   * other axis. Any other target is stored as sent.
+   */
+  private async resolveTargetType(
+    targetType: ReportTargetType,
+    targetId: string,
+  ): Promise<ReportTargetType> {
+    if (targetType !== "USER") return targetType;
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetId },
+      select: { role: true },
+    });
+    return target?.role === "CLUB" ? "CLUB" : "USER";
   }
 
   async getReports(filters?: { status?: ReportStatus; targetType?: ReportTargetType }, page = 1, limit = 20) {

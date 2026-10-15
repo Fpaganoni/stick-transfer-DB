@@ -1,3 +1,7 @@
+"""
+What a report points at. A CLUB account is reported ONLY as CLUB (same id as its User): USER with
+the id of a CLUB account is accepted and stored as CLUB, but clients should send CLUB.
+"""
 enum ReportTargetType {
   USER
   CLUB
@@ -47,7 +51,10 @@ extend type Query {
 }
 
 extend type Mutation {
-  """Authenticated users can report a user, club, post, job, message or news article."""
+  """
+  Authenticated users can report a user, club, post, job, message or news article. Reporting the
+  same club on either axis is the same report: the second one is 400 "You have already reported this."
+  """
   createReport(
     targetType: ReportTargetType!
     targetId: ID!

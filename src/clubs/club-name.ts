@@ -1,3 +1,6 @@
+import { FieldError } from "../common/errors/app.error";
+import { checkName } from "../users/validation/credentials";
+
 /**
  * Club name uniqueness key. Two names that normalize to the same key are the
  * same club name ("Atletico  Madrid" == "atlético madrid").
@@ -38,4 +41,30 @@ export function hasControlOrFormatChars(value: string): boolean {
 /** Display form that gets stored: trimmed, inner whitespace runs collapsed. */
 export function normalizeClubDisplayName(name: string): string {
   return name.replace(WHITESPACE_RUN, " ").trim();
+}
+
+/**
+ * THE club-name rule (syntax only): required, at most NAME_MAX_LENGTH, no
+ * control/invisible characters. Used by register and by assertClubIdentityUpdate
+ * (updateClub, updateUser, createClub), so a name is accepted or rejected the
+ * same way everywhere. Availability is a separate, async check
+ * (ClubsService.assertClubNameAvailable). `field` is where the error is
+ * reported: "name", or "clubName" in register.
+ */
+export function checkClubName(
+  raw: string,
+  field: "name" | "clubName",
+): { name: string; error?: undefined } | { name?: undefined; error: FieldError } {
+  const nameError = checkName(raw);
+  if (nameError) return { error: { ...nameError, field } };
+  if (hasControlOrFormatChars(raw)) {
+    return {
+      error: {
+        field,
+        code: "NAME_INVALID",
+        message: "Name cannot contain control or invisible characters",
+      },
+    };
+  }
+  return { name: normalizeClubDisplayName(raw) };
 }

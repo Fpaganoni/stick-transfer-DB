@@ -55,6 +55,26 @@ export class SocialService {
   ) {}
 
   /**
+   * A CLUB account is followed and followed-by ONLY on the CLUB axis (its Club
+   * row shares the account's id). A USER entity whose id belongs to a CLUB
+   * account is therefore turned into the CLUB entity with the same id instead
+   * of failing, so older clients keep working and no club ever has rows on two
+   * axes. ONE query resolves every USER entity of the call.
+   */
+  private async normalizeEntities(
+    ...entities: { type: EntityType; id: string }[]
+  ): Promise<EntityType[]> {
+    const userIds = entities.filter((e) => e.type === "USER").map((e) => e.id);
+    if (!userIds.length) return entities.map((e) => e.type);
+    const clubs = await this.prisma.user.findMany({
+      where: { id: { in: userIds }, role: "CLUB" },
+      select: { id: true },
+    });
+    const clubIds = new Set(clubs.map((club) => club.id));
+    return entities.map((e) => (e.type === "USER" && clubIds.has(e.id) ? "CLUB" : e.type));
+  }
+
+  /**
    * Ensures the authenticated user is allowed to act as the given entity:
    * a USER can only act as themselves; a CLUB action requires the
    * authenticated user to be that club's admin.
@@ -90,9 +110,13 @@ export class SocialService {
     followingType: EntityType,
     followingId: string,
   ) {
-    await this.assertCanActAs(followerType, followerId, currentUserId);
+    const [actorType, targetType] = await this.normalizeEntities(
+      { type: followerType, id: followerId },
+      { type: followingType, id: followingId },
+    );
+    await this.assertCanActAs(actorType, followerId, currentUserId);
 
-    if (followerType === followingType && followerId === followingId) {
+    if (actorType === targetType && followerId === followingId) {
       throw new BadRequestException("You cannot follow yourself");
     }
 
@@ -100,22 +124,21 @@ export class SocialService {
       const follow = await this.prisma.follow.create({
         data: {
           followerId,
-          followerType,
+          followerType: actorType,
           followingId,
-          followingType,
-          followingUserId: followingType === 'USER' ? followingId : null,
-          followingClubId: followingType === 'CLUB' ? followingId : null,
+          followingType: targetType,
+          followingUserId: targetType === "USER" ? followingId : null,
+          followingClubId: targetType === "CLUB" ? followingId : null,
         },
       });
 
-      if (followingType === "USER") {
-        this.eventEmitter.emit("social.follow_created", {
-          actorId: currentUserId,
-          recipientId: followingId,
-          type: NotificationType.NEW_FOLLOWER,
-          entityId: follow.id,
-        });
-      }
+      // A club account is the recipient too: its Club id is the account's user id.
+      this.eventEmitter.emit("social.follow_created", {
+        actorId: currentUserId,
+        recipientId: followingId,
+        type: NotificationType.NEW_FOLLOWER,
+        entityId: follow.id,
+      });
 
       return follow;
     } catch (error) {
@@ -133,10 +156,14 @@ export class SocialService {
     followingType: EntityType,
     followingId: string,
   ) {
-    await this.assertCanActAs(followerType, followerId, currentUserId);
+    const [actorType, targetType] = await this.normalizeEntities(
+      { type: followerType, id: followerId },
+      { type: followingType, id: followingId },
+    );
+    await this.assertCanActAs(actorType, followerId, currentUserId);
 
     const { count } = await this.prisma.follow.deleteMany({
-      where: { followerId, followerType, followingId, followingType },
+      where: { followerId, followerType: actorType, followingId, followingType: targetType },
     });
 
     return count > 0;
@@ -152,8 +179,9 @@ export class SocialService {
     pagination: OffsetPagination = {},
   ): Promise<UserBasicInfo[]> {
     const { skip, take } = normalizeOffsetPagination(pagination.limit, pagination.offset);
+    const [axis] = await this.normalizeEntities({ type: entityType, id: entityId });
     const follows = await this.prisma.follow.findMany({
-      where: { followingType: entityType, followingId: entityId },
+      where: { followingType: axis, followingId: entityId },
       orderBy: FOLLOW_ORDER,
       skip,
       take,
@@ -172,8 +200,9 @@ export class SocialService {
     pagination: OffsetPagination = {},
   ): Promise<UserBasicInfo[]> {
     const { skip, take } = normalizeOffsetPagination(pagination.limit, pagination.offset);
+    const [axis] = await this.normalizeEntities({ type: entityType, id: entityId });
     const follows = await this.prisma.follow.findMany({
-      where: { followerType: entityType, followerId: entityId },
+      where: { followerType: axis, followerId: entityId },
       orderBy: FOLLOW_ORDER,
       skip,
       take,
@@ -205,8 +234,10 @@ export class SocialService {
     followingType: EntityType,
     ids: string[],
   ): Promise<Set<string>> {
+    // The viewer may be a club account: its follows are on the CLUB follower axis.
+    const [followerAxis] = await this.normalizeEntities({ type: followerType, id: followerId });
     const rows = await this.prisma.follow.findMany({
-      where: { followerType, followerId, followingType, followingId: { in: ids } },
+      where: { followerType: followerAxis, followerId, followingType, followingId: { in: ids } },
       select: { followingId: true },
     });
     return new Set(rows.map((row) => row.followingId));
@@ -230,14 +261,16 @@ export class SocialService {
   // ─── Counts & current-user checks (for field resolvers) ────────────────
 
   async countFollowers(entityType: EntityType, entityId: string) {
+    const [axis] = await this.normalizeEntities({ type: entityType, id: entityId });
     return this.prisma.follow.count({
-      where: { followingType: entityType, followingId: entityId },
+      where: { followingType: axis, followingId: entityId },
     });
   }
 
   async countFollowing(entityType: EntityType, entityId: string) {
+    const [axis] = await this.normalizeEntities({ type: entityType, id: entityId });
     return this.prisma.follow.count({
-      where: { followerType: entityType, followerId: entityId },
+      where: { followerType: axis, followerId: entityId },
     });
   }
 
@@ -247,13 +280,17 @@ export class SocialService {
     followingType: EntityType,
     followingId: string,
   ) {
+    const [actorType, targetType] = await this.normalizeEntities(
+      { type: followerType, id: followerId },
+      { type: followingType, id: followingId },
+    );
     const follow = await this.prisma.follow.findUnique({
       where: {
         followerId_followerType_followingId_followingType: {
           followerId,
-          followerType,
+          followerType: actorType,
           followingId,
-          followingType,
+          followingType: targetType,
         },
       },
     });

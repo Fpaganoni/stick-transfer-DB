@@ -99,8 +99,13 @@ type User {
   updatedAt: String!
   trajectories: [Trajectory!]!
   savedJobs: [JobOpportunity!]!
+  """
+  Total followers. For an account with role CLUB this is the SAME number as
+  Club.followersCount: a club is followed only on the CLUB axis and this field reads that axis.
+  """
   followersCount: Int!
   followingCount: Int!
+  """For a CLUB account this is the same answer as Club.isFollowedByCurrentUser."""
   isFollowedByCurrentUser: Boolean!
   """
   Users and clubs following this user, newest first. A club is listed as its owner
@@ -168,6 +173,10 @@ type Club {
   members: [ClubMember!]!
   createdAt: String!
   updatedAt: String!
+  """
+  Total followers of the club. Always equal to User.followersCount of the same id (the club's
+  account): a club is followed ONLY on the CLUB axis, there is no second counter.
+  """
   followersCount: Int!
   isFollowedByCurrentUser: Boolean!
 }
@@ -400,6 +409,11 @@ enum NewsCategory {
   RESULTS
 }
 
+"""
+Social axis of a follow. An account with role CLUB lives ONLY on the CLUB axis, as follower and
+as followed (same id as its User). Sending USER with the id of a CLUB account is accepted and
+normalized to CLUB, but clients should send CLUB.
+"""
 enum FollowEntityType {
   USER
   CLUB
@@ -419,6 +433,7 @@ enum VerificationStatus {
   REJECTED
 }
 
+"""The stored row: followerType/followingType are the NORMALIZED axes (CLUB for a club account)."""
 type Follow {
   id: ID!
   followerType: FollowEntityType!
@@ -586,7 +601,8 @@ type Query {
   ): [ApplicationWithUser!]!
 
   # Follows
-  # Same shape and paging as User.followers / User.following.
+  # Same shape and paging as User.followers / User.following. A USER entityId that belongs to a
+  # CLUB account reads the CLUB axis (same list as entityType CLUB).
   followers(entityType: FollowEntityType!, entityId: ID!, limit: Int, offset: Int): [UserBasicInfo!]!
   following(entityType: FollowEntityType!, entityId: ID!, limit: Int, offset: Int): [UserBasicInfo!]!
 
@@ -646,10 +662,12 @@ type Mutation {
     city: String
     # Only PLAYER stores a position: goalkeeper | defender | midfielder | attacker
     # (otherwise 400 VALIDATION_ERROR, field position, code POSITION_INVALID).
-    # For any other role it is ignored and stored as null.
+    # For COACH and UMPIRE it is ignored and stored as null. Role CLUB: not allowed, any value is
+    # 400 VALIDATION_ERROR, field position, code FIELD_NOT_ALLOWED (a club is not a person).
     position: String
     # Strict YYYY-MM-DD (UTC), between 16 and 100 years old as of today. Errors:
     # DATE_OF_BIRTH_INVALID | DATE_OF_BIRTH_TOO_YOUNG | DATE_OF_BIRTH_TOO_OLD
+    # Role CLUB: not allowed, 400 VALIDATION_ERROR, field dateOfBirth, code FIELD_NOT_ALLOWED.
     dateOfBirth: String
     # Role CLUB only (required): becomes User.name. Unique ignoring case, accents
     # and extra spaces: 409 CLUB_NAME_TAKEN, field clubName.
@@ -664,8 +682,16 @@ type Mutation {
     @deprecated(reason: "Use createImageUploadSignature(target: USER_AVATAR) and upload straight to Cloudinary")
   uploadCoverImage(userId: ID!, base64: String!): Boolean!
     @deprecated(reason: "Use createImageUploadSignature(target: USER_COVER) and upload straight to Cloudinary")
+  """PLAYER, COACH and UMPIRE only. A CLUB account gets 400 VALIDATION_ERROR, field cvUrl, code FIELD_NOT_ALLOWED."""
   uploadCV(userId: ID!, base64: String!): String!
   deleteCV(userId: ID!): Boolean!
+  """
+  Judged by the STORED role of `id`. A CLUB account is the club, not a person: ANY of dateOfBirth,
+  cvUrl, position, yearsOfExperience, level, trajectories, multimedia, licenseLevel, certifyingBody,
+  licenseNumber, certificationYear, matchesOfficiated, travelAvailability, languages, modalities,
+  umpireCategories and umpireCertifications (null and [] included) is rejected with ONE
+  400 VALIDATION_ERROR listing every offending field with code FIELD_NOT_ALLOWED, and nothing is saved.
+  """
   updateUser(
     id: ID!
     # For a CLUB account this is the club name: same rule as updateClub
@@ -851,7 +877,9 @@ type Mutation {
   """userId is deprecated and ignored: the applicant is the authenticated user."""
   withdrawApplication(id: String!, userId: String): JobApplication!
 
-  # Follows
+  # Follows. A club account is followed/follows only on the CLUB axis: USER with a CLUB account's
+  # id is normalized to CLUB (never two rows for one club). A new follower notifies the followed
+  # account, a club included. Following twice (on either axis) is a 400 "Already following".
   follow(
     followerType: FollowEntityType!
     followerId: ID!

@@ -539,4 +539,251 @@ describe("UsersResolver - club identity", () => {
       expect(profiles[25]).toBeNull();
     });
   });
+
+  describe("person fields are forbidden for a CLUB", () => {
+    // Positional args after (ctx, id) of updateUser, see users.resolver.ts
+    const ARG_INDEX = {
+      position: 6,
+      yearsOfExperience: 10,
+      multimedia: 11,
+      cvUrl: 12,
+      dateOfBirth: 13,
+      level: 14,
+      trajectories: 15,
+      licenseLevel: 16,
+      certifyingBody: 17,
+      licenseNumber: 18,
+      certificationYear: 19,
+      matchesOfficiated: 20,
+      travelAvailability: 21,
+      languages: 22,
+      modalities: 23,
+      umpireCategories: 24,
+      umpireCertifications: 25,
+    } as const;
+    type PersonField = keyof typeof ARG_INDEX;
+    const SAMPLE: Record<PersonField, unknown> = {
+      position: "attacker",
+      yearsOfExperience: 3,
+      multimedia: ["https://x.test/a.jpg"],
+      cvUrl: "https://x.test/cv.pdf",
+      dateOfBirth: "2000-01-01",
+      level: "pro",
+      trajectories: [{}],
+      licenseLevel: "A",
+      certifyingBody: "FIH",
+      licenseNumber: "123",
+      certificationYear: 2020,
+      matchesOfficiated: 10,
+      travelAvailability: "yes",
+      languages: ["es"],
+      modalities: ["OUTDOOR"],
+      umpireCategories: ["senior"],
+      umpireCertifications: [{}],
+    };
+    const updateWith = (fields: Partial<Record<PersonField, unknown>>) => {
+      const args: unknown[] = new Array(26).fill(undefined);
+      for (const [key, value] of Object.entries(fields)) {
+        args[ARG_INDEX[key as PersonField]] = value;
+      }
+      return (resolver as any).updateUser(ctx, "u1", ...args);
+    };
+
+    beforeEach(() => {
+      asUser("u1", "CLUB");
+      usersService.findById.mockResolvedValue({ id: "u1", role: "CLUB" });
+    });
+
+    it.each(Object.keys(ARG_INDEX) as PersonField[])(
+      "updateUser rejects %s with FIELD_NOT_ALLOWED and saves nothing",
+      async (field) => {
+        const error = await rejectionOf(updateWith({ [field]: SAMPLE[field] }));
+
+        expect(error.code).toBe("VALIDATION_ERROR");
+        expect(error.fields).toEqual([expect.objectContaining({ field, code: "FIELD_NOT_ALLOWED" })]);
+        expect(usersService.updateUser).not.toHaveBeenCalled();
+      },
+    );
+
+    it("rejects a null person field as well (clearing is not allowed either)", async () => {
+      const error = await rejectionOf(updateWith({ position: null }));
+
+      expect(error.fields).toEqual([expect.objectContaining({ field: "position" })]);
+    });
+
+    it("reports every forbidden field of one call together", async () => {
+      const error = await rejectionOf(updateWith({ dateOfBirth: "2000-01-01", cvUrl: "x" }));
+
+      expect(error.fields?.map((f) => f.field).sort()).toEqual(["cvUrl", "dateOfBirth"]);
+    });
+
+    it("reports an invalid dateOfBirth of a CLUB once, as FIELD_NOT_ALLOWED only", async () => {
+      const error = await rejectionOf(updateWith({ dateOfBirth: "not-a-date" }));
+
+      expect(error.fields).toEqual([
+        expect.objectContaining({ field: "dateOfBirth", code: "FIELD_NOT_ALLOWED" }),
+      ]);
+    });
+
+    it("still reports an invalid dateOfBirth of a PLAYER as a format error", async () => {
+      asUser("u1", "PLAYER");
+      usersService.findById.mockResolvedValue({ id: "u1", role: "PLAYER" });
+
+      const error = await rejectionOf(updateWith({ dateOfBirth: "not-a-date" }));
+
+      expect(error.fields?.[0]).toMatchObject({ field: "dateOfBirth", code: "DATE_OF_BIRTH_INVALID" });
+    });
+
+    it("judges by the stored role when a super admin edits the club", async () => {
+      asUser("admin", "SUPERADMIN");
+
+      const error = await rejectionOf(updateWith({ level: "pro" }));
+
+      expect(error.fields?.[0]).toMatchObject({ field: "level", code: "FIELD_NOT_ALLOWED" });
+    });
+
+    it("lets a PLAYER keep sending the same fields", async () => {
+      asUser("u1", "PLAYER");
+      usersService.findById.mockResolvedValue({ id: "u1", role: "PLAYER" });
+
+      await updateWith({ level: "pro", yearsOfExperience: 3, cvUrl: "https://x.test/cv.pdf" });
+
+      expect(usersService.updateUser).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ["position", "attacker", undefined],
+      ["dateOfBirth", undefined, "2000-01-01"],
+    ])("register as CLUB rejects %s with FIELD_NOT_ALLOWED", async (field, position, dateOfBirth) => {
+      const error = await rejectionOf(
+        resolver.register(
+          ctx, "a@b.com", "x", undefined, STRONG, "club", "es", "Madrid",
+          position, dateOfBirth, "Club Uno", "Ana", "Lopez",
+        ),
+      );
+
+      expect(error.fields).toEqual([expect.objectContaining({ field, code: "FIELD_NOT_ALLOWED" })]);
+      expect(usersService.createUser).not.toHaveBeenCalled();
+    });
+
+    it("uploadCV rejects a CLUB with FIELD_NOT_ALLOWED and never calls Cloudinary", async () => {
+      const cloudinary = { uploadPdf: jest.fn() };
+      const withCloudinary = new UsersResolver(
+        usersService, authService, cloudinary as any, {} as any, clubsService, {} as any,
+      );
+
+      const error = await rejectionOf(
+        withCloudinary.uploadCV(ctx, "u1", "data:application/pdf;base64,AAAA"),
+      );
+
+      expect(error.fields).toEqual([
+        expect.objectContaining({ field: "cvUrl", code: "FIELD_NOT_ALLOWED" }),
+      ]);
+      expect(cloudinary.uploadPdf).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("single social axis of a club account", () => {
+    let socialService: any;
+    let socialResolver: UsersResolver;
+    const club = { id: "c1", role: "CLUB" };
+    const player = { id: "p1", role: "PLAYER" };
+
+    beforeEach(() => {
+      socialService = {
+        loadFollowersCount: jest.fn().mockResolvedValue(7),
+        loadIsFollowing: jest.fn().mockResolvedValue(true),
+        countFollowing: jest.fn().mockResolvedValue(2),
+        getFollowers: jest.fn().mockResolvedValue([]),
+        getFollowing: jest.fn().mockResolvedValue([]),
+      };
+      socialResolver = new UsersResolver(
+        usersService, authService, {} as any, {} as any, clubsService, socialService,
+      );
+    });
+
+    it("counts the followers of a CLUB account on the CLUB axis", async () => {
+      await socialResolver.followersCount(club, ctx);
+
+      expect(socialService.loadFollowersCount).toHaveBeenCalledWith(ctx, "CLUB", "c1");
+    });
+
+    it("keeps the USER axis for every other role", async () => {
+      await socialResolver.followersCount(player, ctx);
+
+      expect(socialService.loadFollowersCount).toHaveBeenCalledWith(ctx, "USER", "p1");
+    });
+
+    it("gives User.followersCount and Club.followersCount the same number for one club", async () => {
+      const clubsResolver = new ClubsResolver(
+        {} as any, {} as any, {} as any, authService, socialService,
+      );
+
+      const viaUser = await socialResolver.followersCount(club, ctx);
+      const viaClub = await clubsResolver.followersCount({ id: "c1" }, ctx);
+
+      expect(viaUser).toBe(viaClub);
+      expect(socialService.loadFollowersCount.mock.calls.map((c: unknown[]) => c.slice(1))).toEqual([
+        ["CLUB", "c1"],
+        ["CLUB", "c1"],
+      ]);
+    });
+
+    it("reads following, followers and the viewer flag of a club on the CLUB axis", async () => {
+      asUser("viewer");
+
+      await socialResolver.followingCount(club);
+      await socialResolver.followers(club, 10, 0);
+      await socialResolver.following(club, 10, 0);
+      await socialResolver.isFollowedByCurrentUser(club, ctx);
+
+      expect(socialService.countFollowing).toHaveBeenCalledWith("CLUB", "c1");
+      expect(socialService.getFollowers).toHaveBeenCalledWith("CLUB", "c1", { limit: 10, offset: 0 });
+      expect(socialService.getFollowing).toHaveBeenCalledWith("CLUB", "c1", { limit: 10, offset: 0 });
+      expect(socialService.loadIsFollowing).toHaveBeenCalledWith(ctx, "viewer", "CLUB", "c1");
+    });
+  });
+
+  describe("one club name validation for register and updateClub", () => {
+    let realClubs: ClubsService;
+    let realResolver: UsersResolver;
+
+    beforeEach(() => {
+      const prisma = { user: { findFirst: jest.fn().mockResolvedValue(null) } };
+      realClubs = new ClubsService(prisma as any, { emit: jest.fn() } as any);
+      jest.spyOn(realClubs, "notifyPendingVerification").mockResolvedValue(undefined);
+      realResolver = new UsersResolver(
+        usersService, authService, {} as any, {} as any, realClubs, {} as any,
+      );
+    });
+
+    const registerWithName = (clubName: string) =>
+      realResolver.register(
+        ctx, "a@b.com", "ignored", undefined, STRONG, "club", "es", "Madrid",
+        undefined, undefined, clubName, "Ana", "Lopez",
+      );
+
+    it.each([
+      ["a name over 100 chars", "x".repeat(101), "NAME_TOO_LONG"],
+      ["an invisible character", "Club​Uno", "NAME_INVALID"],
+      ["a control character", "Club\u0007Uno", "NAME_INVALID"],
+    ])("rejects %s with the same code and message through both paths", async (_label, name, code) => {
+      const viaRegister = await rejectionOf(registerWithName(name));
+      const viaUpdate = await rejectionOf(realClubs.assertClubIdentityUpdate("u1", { name }));
+
+      expect(viaRegister.fields).toEqual([expect.objectContaining({ field: "clubName", code })]);
+      expect(viaUpdate.fields).toEqual([expect.objectContaining({ field: "name", code })]);
+      expect(viaRegister.fields?.[0].message).toBe(viaUpdate.fields?.[0].message);
+    });
+
+    it("stores the same normalized name through both paths", async () => {
+      await registerWithName("  Club   de  Campo ");
+      const patch = await realClubs.assertClubIdentityUpdate("u1", { name: "  Club   de  Campo " });
+
+      expect(usersService.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ name: patch.name }),
+      );
+      expect(patch.name).toBe("Club de Campo");
+    });
+  });
 });

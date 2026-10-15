@@ -26,6 +26,8 @@ model User {
   coverImage         String?
   coverImagePosition String?             @default("50%")
   bio                String?
+  /// Person field: NULL for role CLUB (as are dateOfBirth, cvUrl, yearsOfExperience,
+  /// level, multimedia and every umpire column) - DB CHECK User_club_no_person_fields_check.
   position           String?
   role               Role                @default(PLAYER)
   /// ISO 3166-1 alpha-2 or GB-ENG|GB-SCT|GB-WLS (src/common/geo/countries.ts, DB CHECK).
@@ -401,6 +403,9 @@ enum ReportStatus {
 }
 
 /// User-submitted reports against any reportable entity (user, club, post, etc).
+/// A CLUB account is reported ONLY with targetType CLUB (same id as its User):
+/// ReportService normalizes USER -> CLUB, so the unique index below also catches a
+/// repeat through the other axis.
 model Report {
   id           String           @id @default(uuid())
   reporterId   String
@@ -436,6 +441,10 @@ model SavedJob {
   @@index([jobOpportunityId])
 }
 
+/// A CLUB account is followed and follows ONLY on the CLUB axis (followerType /
+/// followingType = CLUB, same id as its User, typed FK followingClubId). USER-axis
+/// rows pointing at a CLUB account do not exist: SocialService normalizes them and
+/// migration 20261015120000_club_single_social_axis moved the old ones.
 model Follow {
   id              String           @id @default(uuid())
   followerId      String

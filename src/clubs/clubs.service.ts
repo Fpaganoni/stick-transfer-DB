@@ -18,12 +18,8 @@ import {
   checkPublicHttpUrl,
   throwIfInvalid,
 } from "../common/safe-url";
-import { checkEmail, checkName } from "../users/validation/credentials";
-import {
-  hasControlOrFormatChars,
-  normalizeClubDisplayName,
-  normalizeClubNameKey,
-} from "./club-name";
+import { checkEmail } from "../users/validation/credentials";
+import { checkClubName, hasControlOrFormatChars, normalizeClubNameKey } from "./club-name";
 
 const MANAGER_NAME_MAX_LENGTH = 100;
 
@@ -251,15 +247,9 @@ export class ClubsService {
     const patch: ClubIdentityPatch = {};
 
     if (input.name !== undefined) {
-      const nameError = checkName(input.name);
-      if (nameError) errors.push(nameError);
-      else if (hasControlOrFormatChars(input.name)) {
-        errors.push({
-          field: "name",
-          code: "NAME_INVALID",
-          message: "Name cannot contain control or invisible characters",
-        });
-      } else patch.name = normalizeClubDisplayName(input.name);
+      const checked = checkClubName(input.name, "name");
+      if (checked.error) errors.push(checked.error);
+      else patch.name = checked.name;
     }
     if (input.city !== undefined) {
       if (input.city === null || !input.city.trim()) {

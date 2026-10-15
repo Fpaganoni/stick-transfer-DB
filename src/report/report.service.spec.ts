@@ -13,6 +13,7 @@ const mockPrismaService = {
   },
   user: {
     findMany: jest.fn(),
+    findUnique: jest.fn(),
   },
 };
 
@@ -111,6 +112,88 @@ describe("ReportService", () => {
       prisma.report.create.mockRejectedValue({ code: "P2002" });
 
       await expect(service.createReport(input)).rejects.toThrow("You have already reported this.");
+    });
+
+    // A CLUB account is reported ONLY on the CLUB axis (USER is normalized).
+    describe("single axis for club accounts", () => {
+      const aimedAtUser = {
+        reporterId: "user-1",
+        targetType: "USER" as const,
+        targetId: "club-1",
+        reason: "SPAM" as const,
+      };
+
+      beforeEach(() => {
+        prisma.report.create.mockResolvedValue({ id: "report-1" });
+        prisma.user.findMany.mockResolvedValue([]);
+      });
+
+      it("stores a USER report aimed at a CLUB account on the CLUB axis", async () => {
+        prisma.user.findUnique.mockResolvedValue({ role: "CLUB" });
+
+        await service.createReport(aimedAtUser);
+
+        expect(prisma.user.findUnique).toHaveBeenCalledWith({
+          where: { id: "club-1" },
+          select: { role: true },
+        });
+        expect(prisma.report.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ targetType: "CLUB", targetId: "club-1" }),
+          }),
+        );
+      });
+
+      it("keeps a USER report aimed at a person on the USER axis", async () => {
+        prisma.user.findUnique.mockResolvedValue({ role: "PLAYER" });
+
+        await service.createReport({ ...aimedAtUser, targetId: "user-2" });
+
+        expect(prisma.report.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ targetType: "USER", targetId: "user-2" }),
+          }),
+        );
+      });
+
+      it("keeps a USER report whose target does not exist on the USER axis", async () => {
+        prisma.user.findUnique.mockResolvedValue(null);
+
+        await service.createReport(aimedAtUser);
+
+        expect(prisma.report.create).toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ targetType: "USER" }) }),
+        );
+      });
+
+      it("does not look up a role for CLUB or non-user targets", async () => {
+        await service.createReport({ ...aimedAtUser, targetType: "CLUB" });
+        await service.createReport({ ...aimedAtUser, targetType: "POST", targetId: "post-1" });
+
+        expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      });
+
+      it("rejects reporting yourself even when the club is your own account", async () => {
+        await expect(
+          service.createReport({ ...aimedAtUser, reporterId: "club-1" }),
+        ).rejects.toThrow(BadRequestException);
+        expect(prisma.report.create).not.toHaveBeenCalled();
+      });
+
+      it("treats the same club reported through both axes as already reported", async () => {
+        prisma.user.findUnique.mockResolvedValue({ role: "CLUB" });
+        prisma.report.create
+          .mockResolvedValueOnce({ id: "report-1" })
+          .mockRejectedValueOnce({ code: "P2002" });
+
+        await service.createReport(aimedAtUser);
+
+        await expect(service.createReport(aimedAtUser)).rejects.toThrow(
+          "You have already reported this.",
+        );
+        const axes = prisma.report.create.mock.calls.map((call) => call[0].data.targetType);
+        expect(axes).toEqual(["CLUB", "CLUB"]);
+      });
     });
   });
 

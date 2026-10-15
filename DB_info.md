@@ -337,5 +337,72 @@ con un assert: falla si dos clubes comparten `clubNameKey` o si algun CLUB no ti
 - Ya existentes que ahora tambien salen de `updateClub`: `USERNAME_TAKEN` (409, `field: "username"`), `IMAGE_URL_INVALID`
   (`field: "logo" | "coverImage"`), `COUNTRY_INVALID`, `FIELD_REQUIRED` (`field: "city"`).
 
-**Limitacion conocida**: un club sigue teniendo dos ejes de follow/reporte (`USER` y `CLUB`, mismo id). `Club.followersCount`
-cuenta follows de tipo CLUB y `User.followersCount` los de tipo USER; usar `follow(followingType: CLUB)` para seguir a un club.
+## Un solo eje social por club y sin campos de persona (fase 3)
+
+Una cuenta CLUB **es** el club: no es una persona y no tiene dos identidades sociales.
+
+### Reglas
+- **Follow y Report solo por el eje `CLUB`** (mismo id que el `User`). Con `USER` y el id de una cuenta CLUB el back no falla:
+  lo normaliza a `CLUB` (una consulta de rol por llamada) para que clientes viejos sigan andando. Nunca hay filas `USER`
+  apuntando a un club, asi que no hay dos contadores.
+  - Aplica a `follow`, `unfollow`, `followers`, `following` (los dos lados: el club como seguido y como seguidor),
+    `User.followersCount/followingCount/followers/following/isFollowedByCurrentUser` y `createReport`.
+  - **`User.followersCount` de una cuenta CLUB == `Club.followersCount`** (misma consulta, mismo eje). Esta en el SDL.
+  - Seguir dos veces (por cualquier eje) -> 400 `Already following`; reportar dos veces -> 400 `You have already reported this.`
+  - `follow` ahora **notifica tambien a un club** (`NEW_FOLLOWER`, destinatario = id del club). Antes solo notificaba a personas.
+  - Likes: no existen mas (`20261014130000_drop_likes`), nada que migrar.
+- **Campos de persona prohibidos para CLUB** (`FIELD_NOT_ALLOWED`, 400 `VALIDATION_ERROR`): `dateOfBirth`, `cvUrl`, `position`,
+  `yearsOfExperience`, `level`, `trajectories`, `multimedia`, `licenseLevel`, `certifyingBody`, `licenseNumber`,
+  `certificationYear`, `matchesOfficiated`, `travelAvailability`, `languages`, `modalities`, `umpireCategories`,
+  `umpireCertifications`. Cualquier valor enviado (incluso `null` o `[]`) se rechaza, todos los campos juntos en un solo error,
+  y no se guarda nada. Se juzga por el rol **guardado** (un SUPERADMIN que edita un club tambien choca).
+  - `updateUser`, `register` (solo `dateOfBirth` y `position` existen como argumentos) y `uploadCV` (error en `cvUrl`).
+  - Lista unica en `src/users/validation/club-person-fields.ts`; la espeja el CHECK `User_club_no_person_fields_check`.
+- **Una sola validacion del nombre de club**: `checkClubName` (`src/clubs/club-name.ts`) la usan `register` y
+  `assertClubIdentityUpdate` (`updateClub`, `updateUser`, `createClub`). Mismos codigos y mensajes; solo cambia `field`
+  (`clubName` en `register`, `name` en los demas). La disponibilidad sigue en `assertClubNameAvailable`.
+- Las columnas de persona **siguen en `User`** porque las usan PLAYER, COACH y UMPIRE; para un CLUB estan siempre en `NULL`/vacio
+  (servicio + CHECK). Separarlas en otra tabla (`PlayerProfile`) se evaluo y se dejo fuera de esta fase.
+
+### Migracion `20261015120000_club_single_social_axis` (solo datos + 1 CHECK, sin drift)
+- Mueve los `Follow`/`Report` con eje `USER` de cuentas CLUB al eje `CLUB` (`followingUserId` -> `followingClubId`).
+  Deduplica: si ya existia el par en `CLUB`, se borra el de `USER` (el de `CLUB` gana; si el reporte `USER` ya estaba revisado
+  su estado queda en el respaldo). Un follow que quedaria como auto-follow (un club que se seguia a si mismo por ejes
+  distintos) se borra: violaria `Follow_no_self_follow_check`.
+- Borra `Trajectory` y `UmpireCertification` de cuentas CLUB y deja en `NULL`/`{}` sus campos de persona; despues agrega
+  `User_club_no_person_fields_check` **ya validado**.
+- **Respaldo** en el schema `backup` (mismo cierre que `club_identity_20261014`: `REVOKE` y RLS sin politicas):
+  `club_axis_follow_20261015`, `club_axis_report_20261015` (con columna `action`: `MOVE` | `DELETE_DUPLICATE` | `DELETE_SELF`),
+  `club_person_fields_20261015`, `club_trajectories_20261015`, `club_umpire_certifications_20261015`. Contienen datos
+  personales: borrarlos con `DROP SCHEMA backup CASCADE` cuando se verifique.
+- Aborta (sin dejar nada a medias) si hay una cuenta CLUB sin fila `Club`, y termina verificando que no queda ninguna fila `USER`
+  hacia un club. Imprime los conteos con `RAISE NOTICE`.
+- **Conteos antes de correrla**: `pnpm ts-node prisma/scripts/club-single-axis-counts.ts` (solo lectura). En la DB de
+  desarrollo del 2026-10-15: 12 cuentas CLUB, **0** follows/reportes en el eje `USER` hacia clubes, 0 clubes con campos de
+  persona, 0 trayectorias/certificaciones de clubes: la migracion no cambia datos ahi y solo agrega el CHECK.
+- Verificada en una DB local descartable: todas las migraciones desde cero + una prueba con conflictos (mover, duplicado entre
+  ejes, dos filas que van a la misma tupla, auto-follow, reportes duplicados, club con campos de persona, aborto sin fila
+  `Club`, DB vacia): 19 comprobaciones OK.
+- Rollback: restaurar desde `backup.*` (`UPDATE "Follow"` con la tupla original y `INSERT` de las filas `DELETE_*`; los campos
+  de persona desde `club_person_fields_20261015`) y `ALTER TABLE "User" DROP CONSTRAINT "User_club_no_person_fields_check"`.
+- El seed ya era consistente (los clubes no reciben campos de persona y su unico follow usa `followerType: CLUB`): no cambio.
+
+### Contrato para el FRONT (fase 3)
+
+| Que hacer | Antes | Ahora |
+|-----------|-------|-------|
+| Seguir / dejar de seguir un club | `follow(followingType: CLUB)` (o `USER`, que dejaba un 2do eje) | **Siempre `CLUB`** con el id del club. `USER` con ese id funciona pero se guarda como `CLUB`. |
+| Que un club siga a alguien | `followerType: CLUB` o `USER` | **`CLUB`** (`followerId` = id de la cuenta) |
+| Reportar un club | `targetType: CLUB` o `USER` | **`CLUB`** |
+| Contador de seguidores de un club | `Club.followersCount` o `User.followersCount` (podian diferir) | **Cualquiera: siempre el mismo numero** |
+| `isFollowedByCurrentUser` de un club | por tipo | igual desde `Club` o `User` |
+| Editar perfil de un club | `updateUser` aceptaba campos de persona | enviar **solo** identidad (`name`, `username`, `bio`, `avatar`, `coverImage`, `coverImagePosition`, `city`, `country`, `clubId`) |
+| Formulario de registro de un club | mandaba `dateOfBirth`/`position` (se ignoraban o guardaban) | **no mandarlos**: 400 `FIELD_NOT_ALLOWED` |
+| Perfil publico de un club | podia mostrar edad, CV, posicion, nivel, trayectorias, multimedia | no mostrarlos: llegan vacios (`null`/`[]`) |
+| Subir CV | cualquier rol permitido | `uploadCV` de un CLUB -> 400 `FIELD_NOT_ALLOWED` (`field: "cvUrl"`): ocultar la opcion |
+
+- **Error nuevo para manejar**: `FIELD_NOT_ALLOWED` en `register` y `updateUser` de un CLUB. Trae un elemento por campo enviado
+  (`field`, `code`, `message`), en la lista de errores por campo, igual que los demas `VALIDATION_ERROR`. Es un error de
+  programacion del front: no deberia verse.
+- Los campos `Follow.followerType`/`followingType` que devuelve `follow` ya vienen normalizados (`CLUB` para un club).
+- Notificaciones: un club recibe `NEW_FOLLOWER` cuando lo siguen.

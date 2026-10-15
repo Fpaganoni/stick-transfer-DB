@@ -3,6 +3,8 @@ import { SocialService } from "./social.service";
 function makeService() {
   const prisma = {
     follow: { groupBy: jest.fn(), findMany: jest.fn() },
+    // Role lookup of the viewer (a club account follows on the CLUB axis).
+    user: { findMany: jest.fn().mockResolvedValue([]) },
   };
   const service = new SocialService(prisma as any, { emit: jest.fn() } as any);
   return { prisma, service };
@@ -43,6 +45,21 @@ describe("SocialService batched reads", () => {
       select: { followingId: true },
     });
     expect([...followed]).toEqual(["c2"]);
+  });
+
+  it("looks a club viewer up on the CLUB follower axis", async () => {
+    const { prisma, service } = makeService();
+    prisma.user.findMany.mockResolvedValue([{ id: "club-viewer" }]);
+    prisma.follow.findMany.mockResolvedValue([{ followingId: "p1" }]);
+
+    const followed = await service.findFollowedIds("USER", "club-viewer", "USER", ["p1", "p2"]);
+
+    expect(prisma.follow.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ followerType: "CLUB", followerId: "club-viewer" }),
+      }),
+    );
+    expect([...followed]).toEqual(["p1"]);
   });
 
   it("serves a whole list of clubs through the per-request loaders", async () => {

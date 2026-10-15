@@ -27,8 +27,9 @@ import { AppError, FieldError } from "../common/errors/app.error";
 import { mapUniqueViolation } from "../common/errors/unique-violation";
 import { checkCountry, normalizeCountry } from "../common/geo/countries";
 import { SELF_VIEW } from "../common/self-view";
-import { hasControlOrFormatChars, normalizeClubDisplayName } from "../clubs/club-name";
+import { checkClubName } from "../clubs/club-name";
 import { checkManagerName } from "../clubs/clubs.service";
+import { checkClubForbiddenFields } from "./validation/club-person-fields";
 import {
   checkDateOfBirth,
   checkEmail,
@@ -122,29 +123,27 @@ export class UsersResolver {
     // Normalizes (trim/lowercase) and validates email, name, username, password
     // and dateOfBirth. Errors are merged with the role/position ones below so the
     // client gets a single VALIDATION_ERROR. A CLUB account IS the club, so its
-    // name is clubName and the `name` argument is ignored.
+    // name is clubName and the `name` argument is ignored; its dateOfBirth and
+    // position are FIELD_NOT_ALLOWED (a club is not a person).
     const { values, errors: credentialErrors } = checkRegisterCredentials({
       email: rawEmail,
       name: isClub ? (clubName ?? "") : rawName,
       username: rawUsername,
       password: rawPassword,
-      dateOfBirth,
+      dateOfBirth: isClub ? undefined : dateOfBirth,
     });
     const { email, username, password } = values;
-    const name = isClub ? normalizeClubDisplayName(values.name) : values.name;
+    let name = values.name;
     // For a CLUB, name problems belong to clubName (a missing one is FIELD_REQUIRED below).
     const roleErrors: FieldError[] = isClub
       ? credentialErrors.filter((e) => e.field !== "name")
       : [...credentialErrors];
-    if (isClub && clubName?.trim()) {
-      const clubNameError = checkName(clubName);
-      if (clubNameError) roleErrors.push({ ...clubNameError, field: "clubName" });
-      else if (hasControlOrFormatChars(clubName)) {
-        roleErrors.push({
-          field: "clubName",
-          code: "NAME_INVALID",
-          message: "Name cannot contain control or invisible characters",
-        });
+    if (isClub) {
+      roleErrors.push(...checkClubForbiddenFields({ dateOfBirth, position }));
+      if (clubName?.trim()) {
+        const checked = checkClubName(clubName, "clubName");
+        if (checked.error) roleErrors.push(checked.error);
+        else name = checked.name;
       }
     }
     if (isClub) {
@@ -304,6 +303,10 @@ export class UsersResolver {
     this.requireSelfOrAdmin(context, userId);
     const user = await this.usersService.findById(userId);
     if (!user) throw new Error("User not found");
+    // A club is not a person: same FIELD_NOT_ALLOWED as updateUser's cvUrl.
+    if (user.role === "CLUB") {
+      throw AppError.validation(checkClubForbiddenFields({ cvUrl: base64 }));
+    }
     if (
       user.role !== "PLAYER" &&
       user.role !== "COACH" &&
@@ -437,14 +440,34 @@ export class UsersResolver {
     const nameError = name !== undefined ? checkName(name) : null;
     if (nameError) profileErrors.push(nameError);
 
-    // position (PLAYER only), multimedia (never UMPIRE) and the club identity
-    // rules are judged by the stored role, not the caller's (an admin may edit
-    // someone else). Skip the lookup when none of them is sent.
+    // position (PLAYER only), multimedia (never UMPIRE), the person fields (never
+    // CLUB) and the club identity rules are judged by the stored role, not the
+    // caller's (an admin may edit someone else). Skip the lookup when none of
+    // them is sent.
+    const personFields = {
+      dateOfBirth,
+      cvUrl,
+      position,
+      yearsOfExperience,
+      level,
+      trajectories,
+      multimedia,
+      licenseLevel,
+      certifyingBody,
+      licenseNumber,
+      certificationYear,
+      matchesOfficiated,
+      travelAvailability,
+      languages,
+      modalities,
+      umpireCategories,
+      umpireCertifications,
+    };
+    const forbiddenForClub = checkClubForbiddenFields(personFields);
     let resolvedPosition: string | null | undefined;
     let clubIdentityTarget = false;
     if (
-      position !== undefined ||
-      multimedia !== undefined ||
+      forbiddenForClub.length ||
       name !== undefined ||
       city !== undefined ||
       country !== undefined
@@ -452,6 +475,7 @@ export class UsersResolver {
       const target = await this.usersService.findById(id);
       if (!target) throw new NotFoundException("User not found");
       clubIdentityTarget = target.role === "CLUB";
+      if (clubIdentityTarget) profileErrors.push(...forbiddenForClub);
       if (position !== undefined) {
         const result = resolvePosition(target.role, position);
         if (result.error) profileErrors.push(result.error);
@@ -465,7 +489,11 @@ export class UsersResolver {
         });
       }
     }
-    if (profileErrors.length) throw AppError.validation(profileErrors);
+    // For a CLUB, FIELD_NOT_ALLOWED replaces the format error of the same field.
+    const reportedErrors = clubIdentityTarget
+      ? profileErrors.filter((e) => e.field !== "dateOfBirth" || e.code === "FIELD_NOT_ALLOWED")
+      : profileErrors;
+    if (reportedErrors.length) throw AppError.validation(reportedErrors);
 
     // A CLUB account IS the club: the same rule as updateClub (unique club name,
     // a city and a country are required) through ONE shared service method.
@@ -589,14 +617,22 @@ export class UsersResolver {
   // followersCount and isFollowedByCurrentUser are batched
   // per request (see SocialLoaders): a list of N users costs one query per
   // selected field, not N.
+  /**
+   * A CLUB account lives only on the CLUB social axis, so its counters and lists
+   * are the very same ones Club.followersCount and friends read.
+   */
+  private socialAxis(user: { role?: string }): "USER" | "CLUB" {
+    return user.role === "CLUB" ? "CLUB" : "USER";
+  }
+
   @ResolveField()
   async followersCount(@Parent() user: any, @Context() context: any) {
-    return this.socialService.loadFollowersCount(context, "USER", user.id);
+    return this.socialService.loadFollowersCount(context, this.socialAxis(user), user.id);
   }
 
   @ResolveField()
   async followingCount(@Parent() user: any) {
-    return this.socialService.countFollowing("USER", user.id);
+    return this.socialService.countFollowing(this.socialAxis(user), user.id);
   }
 
   @ResolveField()
@@ -605,7 +641,7 @@ export class UsersResolver {
     @Args("limit", { nullable: true }) limit?: number,
     @Args("offset", { nullable: true }) offset?: number,
   ) {
-    return this.socialService.getFollowers("USER", user.id, { limit, offset });
+    return this.socialService.getFollowers(this.socialAxis(user), user.id, { limit, offset });
   }
 
   @ResolveField()
@@ -614,13 +650,18 @@ export class UsersResolver {
     @Args("limit", { nullable: true }) limit?: number,
     @Args("offset", { nullable: true }) offset?: number,
   ) {
-    return this.socialService.getFollowing("USER", user.id, { limit, offset });
+    return this.socialService.getFollowing(this.socialAxis(user), user.id, { limit, offset });
   }
 
   @ResolveField()
   async isFollowedByCurrentUser(@Parent() user: any, @Context() context: any) {
     const currentUser = this.getCurrentUser(context);
     if (!currentUser) return false;
-    return this.socialService.loadIsFollowing(context, currentUser.userId, "USER", user.id);
+    return this.socialService.loadIsFollowing(
+      context,
+      currentUser.userId,
+      this.socialAxis(user),
+      user.id,
+    );
   }
 }
