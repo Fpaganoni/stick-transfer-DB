@@ -6,6 +6,7 @@ describe("UsersResolver - authorization", () => {
   let usersService: any;
   let authService: any;
   let cloudinary: any;
+  let clubsService: any;
 
   const ctx = {};
   const IMG = "data:image/png;base64,AAAA";
@@ -29,12 +30,16 @@ describe("UsersResolver - authorization", () => {
       uploadBase64: jest.fn().mockResolvedValue({ secure_url: "https://img" }),
       uploadPdf: jest.fn().mockResolvedValue({ secure_url: "https://cv" }),
     };
+    clubsService = {
+      resetLoaders: jest.fn(),
+      assertClubIdentityUpdate: jest.fn(),
+    };
     resolver = new UsersResolver(
       usersService,
       authService,
       cloudinary,
       {} as any,
-      {} as any,
+      clubsService,
       {} as any,
     );
   });

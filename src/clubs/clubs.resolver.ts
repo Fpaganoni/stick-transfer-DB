@@ -6,6 +6,9 @@ import { CloudinaryService } from "../uploads/cloudinary.service";
 import { assertImageDataUrl } from "../uploads/image-url";
 import { AuthService } from "../auth/auth.service";
 import { SocialService } from "../social/social.service";
+import { mapUniqueViolation } from "../common/errors/unique-violation";
+import { SELF_VIEW } from "../common/self-view";
+import { validateUsernameOrThrow } from "../users/validation/credentials";
 
 @Resolver("Club")
 export class ClubsResolver {
@@ -86,11 +89,17 @@ export class ClubsResolver {
     const currentUser = this.getCurrentUser(context);
     if (!currentUser) throw new UnauthorizedException("Authentication required");
 
-    return this.clubsService.create({
-      userId: currentUser.userId,
-      name, city, country, managedByFirstName, managedByLastName, benefits,
-      instagram, twitter, facebook, tiktok
-    });
+    try {
+      const club = await this.clubsService.create({
+        userId: currentUser.userId,
+        name, city, country, managedByFirstName, managedByLastName, benefits,
+        instagram, twitter, facebook, tiktok
+      });
+      this.clubsService.resetLoaders(context);
+      return club;
+    } catch (error) {
+      throw mapUniqueViolation(error) ?? error;
+    }
   }
 
   /** Super-admin only: approves a club's verification request. */
@@ -135,18 +144,90 @@ export class ClubsResolver {
     @Args("coverImage", { nullable: true }) coverImage?: string | null,
     @Args("city", { nullable: true }) city?: string | null,
     @Args("country", { nullable: true }) country?: string | null,
+    @Args("username", { nullable: true }) rawUsername?: string,
   ) {
     this.requireClubOwnerOrAdmin(context, id);
-    return this.clubsService.updateClub(id, {
-      name, managedByFirstName, managedByLastName, description, bio, coverImagePosition, league, foundedYear,
-      email, phone, website, instagram, twitter, facebook, tiktok, benefits,
-      logo, coverImage, city, country,
-    });
+    const username = validateUsernameOrThrow(rawUsername);
+    try {
+      const club = await this.clubsService.updateClub(id, {
+        name, username, managedByFirstName, managedByLastName, description, bio, coverImagePosition,
+        league, foundedYear, email, phone, website, instagram, twitter, facebook, tiktok, benefits,
+        logo, coverImage, city, country,
+      });
+      this.clubsService.resetLoaders(context);
+      return club;
+    } catch (error) {
+      // Race: another request took the club name / username after the pre-check.
+      throw mapUniqueViolation(error) ?? error;
+    }
+  }
+
+  /** The owner and super admins see private club fields; so does the account that just registered. */
+  private canSeePrivateFields(club: any, context: any): boolean {
+    if (club?.[SELF_VIEW]) return true;
+    const currentUser = this.getCurrentUser(context);
+    if (!currentUser) return false;
+    return currentUser.userId === club.id || currentUser.role === "SUPERADMIN";
+  }
+
+  /** PRIVACY: the person who manages the club is visible only to the owner and super admins. */
+  @ResolveField()
+  managedBy(@Parent() club: any, @Context() context: any) {
+    if (!this.canSeePrivateFields(club, context)) return null;
+    return { firstName: club.managedByFirstName, lastName: club.managedByLastName };
+  }
+
+  // Club identity lives on the owner User (Club.id === User.id). The joined
+  // `user` is used when present; otherwise ONE batched query per request.
+  private async owner(club: any, context: any) {
+    return club.user ?? (await this.clubsService.loadOwner(context, club.id));
   }
 
   @ResolveField()
-  managedBy(@Parent() club: any) {
-    return { firstName: club.managedByFirstName, lastName: club.managedByLastName };
+  async user(@Parent() club: any, @Context() context: any) {
+    return this.owner(club, context);
+  }
+
+  @ResolveField()
+  async name(@Parent() club: any, @Context() context: any) {
+    return (await this.owner(club, context))?.name ?? "";
+  }
+
+  /** The crest is the owner's avatar. */
+  @ResolveField()
+  async logo(@Parent() club: any, @Context() context: any) {
+    return (await this.owner(club, context))?.avatar ?? null;
+  }
+
+  @ResolveField()
+  async coverImage(@Parent() club: any, @Context() context: any) {
+    return (await this.owner(club, context))?.coverImage ?? null;
+  }
+
+  @ResolveField()
+  async coverImagePosition(@Parent() club: any, @Context() context: any) {
+    return (await this.owner(club, context))?.coverImagePosition ?? null;
+  }
+
+  @ResolveField()
+  async bio(@Parent() club: any, @Context() context: any) {
+    return (await this.owner(club, context))?.bio ?? null;
+  }
+
+  @ResolveField()
+  async city(@Parent() club: any, @Context() context: any) {
+    return (await this.owner(club, context))?.city ?? "";
+  }
+
+  @ResolveField()
+  async country(@Parent() club: any, @Context() context: any) {
+    return (await this.owner(club, context))?.country ?? "";
+  }
+
+  /** Deprecated: clubs have no gallery any more. Always empty. */
+  @ResolveField()
+  videos(): string[] {
+    return [];
   }
 
   @Mutation()
@@ -231,10 +312,7 @@ export class ClubsResolver {
   /** PRIVACY: the verification document is visible only to the owning club and super admins. */
   @ResolveField()
   async verificationDoc(@Parent() club: any, @Context() context: any) {
-    const currentUser = this.getCurrentUser(context);
-    if (!currentUser) return null;
-    const canSee = currentUser.userId === club.id || currentUser.role === "SUPERADMIN";
-    return canSee ? (club.verificationDoc ?? null) : null;
+    return this.canSeePrivateFields(club, context) ? (club.verificationDoc ?? null) : null;
   }
 
   /**

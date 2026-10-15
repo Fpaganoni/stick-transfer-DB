@@ -167,11 +167,14 @@ export class ExploreService {
     const { country, league, search } = filters;
     const { skip, take } = normalizeOffsetPagination(filters.limit, filters.offset);
 
-    const where: any = {};
+    // The club identity (name, city, country, bio) lives on the owner User,
+    // and a deactivated account is not listed (same as exploreUsers).
+    const userWhere: any = { isActive: true, role: "CLUB" };
+    const where: any = { user: userWhere };
 
     // Country filter: equality on the normalized code ('es' -> 'ES'); unknown -> no results
     if (country) {
-      where.country = countryFilter(country);
+      userWhere.country = countryFilter(country);
     }
 
     // League filter
@@ -182,10 +185,10 @@ export class ExploreService {
     // Search filter (searches name, city, description, bio)
     if (search) {
       where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { city: { contains: search, mode: "insensitive" } },
+        { user: { name: { contains: search, mode: "insensitive" } } },
+        { user: { city: { contains: search, mode: "insensitive" } } },
         { description: { contains: search, mode: "insensitive" } },
-        { bio: { contains: search, mode: "insensitive" } },
+        { user: { bio: { contains: search, mode: "insensitive" } } },
       ];
     }
 
@@ -194,9 +197,11 @@ export class ExploreService {
       orderBy: [
         { isVerified: "desc" }, // Verified clubs first
         { createdAt: "desc" }, // Then newest first
+        { id: "asc" }, // Stable pages
       ],
       take,
       skip,
+      include: { user: true },
     });
   }
 
@@ -245,7 +250,7 @@ export class ExploreService {
    * Get all available countries (for filter dropdown)
    */
   async getAvailableCountries() {
-    // Get countries from both users and clubs
+    // Clubs are User rows (role CLUB), so one query covers every account.
     const userCountries = await this.prisma.user.findMany({
       where: {
         country: { not: null },
@@ -257,23 +262,9 @@ export class ExploreService {
       distinct: ["country"],
     });
 
-    const clubCountries = await this.prisma.club.findMany({
-      where: {
-        country: { not: null },
-      },
-      select: {
-        country: true,
-      },
-      distinct: ["country"],
-    });
-
-    const allCountries = new Set([
-      ...userCountries.map((c) => c.country),
-      ...clubCountries.map((c) => c.country),
-    ]);
-
-    return Array.from(allCountries)
-      .filter((c) => c !== null)
+    return userCountries
+      .map((c) => c.country)
+      .filter((c): c is string => c !== null)
       .sort();
   }
 }

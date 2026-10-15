@@ -1,7 +1,20 @@
-import { PrismaClient } from "@prisma/client";
+import { Club, PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcrypt";
 
 const prisma = new PrismaClient();
+
+/**
+ * A Club row plus the identity fields that live on its owner User (name, city,
+ * country, bio, logo = User.avatar). Seed-only convenience so trajectories and
+ * jobs can read `club.name` / `club.city` like before.
+ */
+type SeededClub = Club & {
+  name: string;
+  city: string;
+  country: string;
+  bio: string | null;
+  logo: string | null;
+};
 
 // User.position stores the PLAYER enum (see resolvePosition in
 // src/users/validation/credentials.ts); trajectories need a readable label.
@@ -69,388 +82,298 @@ async function main() {
     return new Date(year, month, day);
   };
 
-  // ========== CLUB USERS (role: CLUB) ==========
-  // Created first: each Club profile below shares its id with one of these users.
-  console.log("🔑 Creating club users...");
+  // ========== CLUB ACCOUNTS (role: CLUB) ==========
+  // A club account IS the club: User.name is the club name, User.avatar its
+  // crest, and cover / bio / city / country live on the User too. The Club row
+  // only holds club data (league, description, contacts, benefits...), and
+  // managedBy is the person who runs the account (private to the owner and
+  // SUPERADMIN). No randomuser photos: the crest is the club logo.
+  console.log("🏑 Creating club accounts...");
 
-  const clubUserData = [
-    // Spanish clubs admins
+  const COVERS = {
+    stadium: "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=1200&h=400&fit=crop",
+    night: "https://images.unsplash.com/photo-1483389127117-b6a2102724ae?w=1200&h=400&fit=crop",
+    pitch: "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=1200&h=400&fit=crop",
+    arena: "https://images.unsplash.com/photo-1505666287802-931dc83948e9?w=1200&h=400&fit=crop",
+  };
+  const LOGO_BASE = "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/clubs";
+
+  const clubSeeds = [
+    // Spanish clubs
     {
-      username: "admin_campo_madrid",
+      username: "ccvillamadrid",
       email: "admin.campomadrid@hockey-test.com",
-      name: "Antonio López",
+      managedBy: ["Antonio", "López"],
+      name: "Club de Campo Villa de Madrid",
       country: "ES",
       city: "Madrid",
+      league: "División de Honor",
+      foundedYear: 1929,
+      description: "One of the most prestigious field hockey clubs in Spain",
+      bio: "Excellence in field hockey since 1929",
+      logo: `${LOGO_BASE}/ccvm_logo.png`,
+      coverImage: COVERS.stadium,
+      isVerified: true,
+      benefits: ["Professional Coaching", "International Tours", "Full Medical Support", "Sponsorship Opportunities"],
     },
     {
-      username: "admin_polo_barcelona",
+      username: "rcpolobarcelona",
       email: "admin.polobarcelona@hockey-test.com",
-      name: "Marta Soler",
+      managedBy: ["Marta", "Soler"],
+      name: "RC Polo Barcelona",
       country: "ES",
       city: "Barcelona",
+      league: "División de Honor",
+      foundedYear: 1897,
+      description: "Historic Barcelona field hockey club with multiple championships",
+      bio: "Tradition and excellence in field hockey",
+      logo: `${LOGO_BASE}/rcpolo_logo.png`,
+      coverImage: COVERS.arena,
+      isVerified: true,
+      benefits: ["Elite Training Facilities", "Gym Access", "Player Networking", "High Performance Center"],
     },
     {
-      username: "admin_real_polo",
+      username: "realclubpolo",
       email: "admin.realpolo@hockey-test.com",
-      name: "Jordi Puig",
+      managedBy: ["Jordi", "Puig"],
+      name: "Real Club de Polo",
       country: "ES",
       city: "Barcelona",
+      league: "División de Honor",
+      foundedYear: 1942,
+      description: "Social and sports club with a strong field hockey section",
+      bio: "Official account of Real Club de Polo. Join us on the pitch!",
+      logo: `${LOGO_BASE}/realclubpolo_logo.png`,
+      coverImage: COVERS.night,
+      isVerified: true,
+      benefits: ["Swimming Pool", "Social Events", "Tennis Courts"],
     },
     {
-      username: "admin_terrassa",
+      username: "cdterrassa",
       email: "admin.terrassa@hockey-test.com",
-      name: "Núria Casas",
+      managedBy: ["Núria", "Casas"],
+      name: "CD Terrassa HC",
       country: "ES",
       city: "Terrassa",
+      league: "División de Honor",
+      foundedYear: 1952,
+      description: "European champion field hockey club",
+      bio: "Official account of CD Terrassa HC. Join us on the pitch!",
+      logo: `${LOGO_BASE}/cdterrassa_logo.png`,
+      coverImage: COVERS.pitch,
+      isVerified: true,
+      benefits: ["Youth Academy", "Video Analysis", "Nutrition Planning"],
     },
     {
-      username: "admin_atletic_terrassa",
+      username: "atleticterrassa",
       email: "admin.atleticterrassa@hockey-test.com",
-      name: "Pau Martínez",
+      managedBy: ["Pau", "Martínez"],
+      name: "Atlètic Terrassa HC",
       country: "ES",
       city: "Terrassa",
+      league: "División de Honor",
+      foundedYear: 1952,
+      description: "Terrassa club known for its indoor and outdoor programs",
+      bio: "Official account of Atlètic Terrassa HC. Join us on the pitch!",
+      logo: `${LOGO_BASE}/atleticterrassa_logo.png`,
+      coverImage: COVERS.night,
+      isVerified: true,
+      benefits: ["Indoor Hockey Pitch", "Summer Camps", "Psychological Support"],
     },
-    // Argentinian clubs admins
+    // Argentinian clubs
     {
-      username: "admin_san_isidro",
+      username: "casanisidro",
       email: "admin.sanisidro@hockey-test.com",
-      name: "Gustavo Pérez",
+      managedBy: ["Gustavo", "Pérez"],
+      name: "Club Atlético San Isidro",
       country: "AR",
       city: "Buenos Aires",
+      league: "Metropolitano A",
+      foundedYear: 1902,
+      description: "Historic Argentine field hockey powerhouse",
+      bio: "Official account of Club Atlético San Isidro. Join us on the pitch!",
+      logo: `${LOGO_BASE}/sanisidro_logo.png`,
+      coverImage: COVERS.pitch,
+      isVerified: true,
+      benefits: ["Professional Scout Access", "Career Mentoring", "Physiotherapy"],
     },
     {
-      username: "admin_belgrano",
+      username: "belgranoac",
       email: "admin.belgrano@hockey-test.com",
-      name: "Florencia Ríos",
+      managedBy: ["Florencia", "Ríos"],
+      name: "Club Atletico Belgrano",
       country: "AR",
       city: "Buenos Aires",
+      league: "Metropolitano A",
+      foundedYear: 1896,
+      description: "Traditional Buenos Aires club with a large youth section",
+      bio: "Official account of Club Atletico Belgrano. Join us on the pitch!",
+      logo: `${LOGO_BASE}/belgrano_logo.png`,
+      coverImage: COVERS.stadium,
+      isVerified: true,
+      benefits: ["Education Scholarships", "Language Classes", "Free Equipment"],
     },
     {
-      username: "admin_gimnasia",
+      username: "gimnasiaesgrima",
       email: "admin.gimnasia@hockey-test.com",
-      name: "Hernán Soria",
+      managedBy: ["Hernán", "Soria"],
+      name: "Gimnasia y Esgrima Buenos Aires",
       country: "AR",
       city: "Buenos Aires",
+      league: "Metropolitano A",
+      foundedYear: 1880,
+      description: "One of Argentina's oldest sports clubs",
+      bio: "Official account of Gimnasia y Esgrima Buenos Aires. Join us on the pitch!",
+      logo: `${LOGO_BASE}/gimnasia_logo.png`,
+      coverImage: COVERS.arena,
+      isVerified: true,
+      benefits: ["Multi-sport Facilities", "Historical Museum", "Competitive Leagues"],
     },
     {
-      username: "admin_italiano",
+      username: "clubitaliano",
       email: "admin.italiano@hockey-test.com",
-      name: "Silvana Gallo",
+      managedBy: ["Silvana", "Gallo"],
+      name: "Club Italiano",
       country: "AR",
       city: "Buenos Aires",
+      league: "Metropolitano A",
+      foundedYear: 1900,
+      description: "Community club that keeps its Italian roots alive through sport",
+      bio: "Official account of Club Italiano. Join us on the pitch!",
+      logo: `${LOGO_BASE}/italiano_logo.png`,
+      coverImage: COVERS.stadium,
+      // Left unverified on purpose, to exercise the verification flow
+      isVerified: false,
+      benefits: ["Cultural Exchange", "Family Memberships", "Discounts on Gear"],
     },
     {
-      username: "admin_lomas",
+      username: "lomasathletic",
       email: "admin.lomas@hockey-test.com",
-      name: "Eduardo Bravo",
+      managedBy: ["Eduardo", "Bravo"],
+      name: "Lomas Athletic Club",
       country: "AR",
       city: "Lomas de Zamora",
+      league: "Metropolitano A",
+      foundedYear: 1891,
+      description: "Grass and synthetic pitches in the south of Buenos Aires",
+      bio: "Official account of Lomas Athletic Club. Join us on the pitch!",
+      logo: `${LOGO_BASE}/lomas_logo.png`,
+      coverImage: COVERS.night,
+      isVerified: true,
+      benefits: ["Grass Fields", "Syntetic Pitches", "Personal Training"],
     },
-    // International clubs admins
+    // International clubs
     {
-      username: "admin_rotterdam",
+      username: "hcrotterdam",
       email: "admin.rotterdam@hockey-test.com",
-      name: "Lars van Dijk",
+      managedBy: ["Lars", "van Dijk"],
+      name: "HC Rotterdam",
       country: "NL",
       city: "Rotterdam",
+      league: "Hoofdklasse",
+      foundedYear: 1925,
+      description: "Dutch top-flight club with an international outlook",
+      bio: "Official account of HC Rotterdam. Join us on the pitch!",
+      logo: `${LOGO_BASE}/rotterdam_logo.png`,
+      coverImage: COVERS.arena,
+      isVerified: true,
+      benefits: ["International Exposure", "Sponsorship Deals", "Top-tier Competition"],
     },
     {
-      username: "admin_amsterdam",
+      username: "amsterdamhc",
       email: "admin.amsterdam@hockey-test.com",
-      name: "Sophie de Boer",
+      managedBy: ["Sophie", "de Boer"],
+      name: "Amsterdam HC",
       country: "NL",
       city: "Amsterdam",
+      league: "Hoofdklasse",
+      foundedYear: 1892,
+      description: "One of the oldest hockey clubs in the world",
+      bio: "Official account of Amsterdam HC. Join us on the pitch!",
+      logo: `${LOGO_BASE}/amsterdam_logo.png`,
+      coverImage: COVERS.night,
+      isVerified: true,
+      benefits: ["Elite Hockey Network", "Career Opportunities", "Housing Support"],
     },
   ];
 
+  // Every logo/cover is checked with a HEAD request: anything that does not
+  // answer 200 is stored as null (and listed at the end) instead of shipping a
+  // broken image. Offline runs keep the url and say that it was not verified.
+  const imageUrls = [...new Set(clubSeeds.flatMap((c) => [c.logo, c.coverImage]))];
+  const brokenImageUrls: string[] = [];
+  const unverifiedImageUrls: string[] = [];
+  const urlStatus = new Map<string, "ok" | "broken" | "unverified">();
+  await Promise.all(
+    imageUrls.map(async (url) => {
+      try {
+        const res = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(10_000) });
+        urlStatus.set(url, res.status === 200 ? "ok" : "broken");
+        if (res.status !== 200) brokenImageUrls.push(`${res.status} ${url}`);
+      } catch {
+        urlStatus.set(url, "unverified");
+        unverifiedImageUrls.push(url);
+      }
+    }),
+  );
+  const imageOrNull = (url: string): string | null =>
+    urlStatus.get(url) === "broken" ? null : url;
+
   const clubUsers = [];
-  for (let index = 0; index < clubUserData.length; index++) {
-    const clubUser = clubUserData[index];
-    const gender = getGenderFromName(clubUser.name);
-    const genderPath = gender === "female" ? "women" : "men";
-    const cu = await prisma.user.create({
+  const clubs: SeededClub[] = [];
+  for (let index = 0; index < clubSeeds.length; index++) {
+    const club = clubSeeds[index];
+    const handle = club.name.replace(/[^a-zA-Z]/g, "").toLowerCase();
+    const clubUser = await prisma.user.create({
       data: {
-        email: clubUser.email,
-        username: clubUser.username,
-        name: clubUser.name,
+        email: club.email,
+        username: club.username,
+        name: club.name,
         password: hashedPassword,
         role: "CLUB",
-        bio: `Club administrator with passion for field hockey. Managing and growing the club every day! 🏑`,
-        avatar: `https://randomuser.me/api/portraits/${genderPath}/${50 + index}.jpg`,
-        country: clubUser.country,
-        city: clubUser.city,
-        dateOfBirth: randomDateOfBirth(35, 60),
-        level: "PROFESSIONAL",
-        yearsOfExperience: 15, // Club users are Professional by default
-        isVerified: true,
+        bio: club.bio,
+        avatar: imageOrNull(club.logo),
+        coverImage: imageOrNull(club.coverImage),
+        country: club.country,
+        city: club.city,
+        isVerified: club.isVerified,
         isEmailVerified: true,
+        clubProfile: {
+          create: {
+            managedByFirstName: club.managedBy[0],
+            managedByLastName: club.managedBy[1],
+            league: club.league,
+            foundedYear: club.foundedYear,
+            description: club.description,
+            email: `contact@${handle}.com`,
+            phone: `+34 600 ${100000 + index * 11111}`,
+            website: `https://www.${handle}.com`,
+            instagram: `https://instagram.com/${handle}`,
+            twitter: `https://x.com/${handle}`,
+            facebook: `https://facebook.com/${handle}`,
+            tiktok: `https://tiktok.com/@${handle}`,
+            isVerified: club.isVerified,
+            verificationStatus: club.isVerified ? "VERIFIED" : "UNVERIFIED",
+            benefits: club.benefits,
+          },
+        },
       },
+      include: { clubProfile: true },
     });
-    clubUsers.push(cu);
+    clubUsers.push(clubUser);
+    // Identity fields are read from the User; they are copied here only so the
+    // rest of the seed can keep using one `clubs[i].name` style object.
+    clubs.push({
+      ...clubUser.clubProfile!,
+      name: clubUser.name,
+      city: clubUser.city!,
+      country: clubUser.country!,
+      bio: clubUser.bio,
+      logo: clubUser.avatar,
+    });
   }
 
-  console.log(`✅ Created ${clubUsers.length} club users\n`);
-
-  // ========== FIELD HOCKEY CLUBS ==========
-  console.log("🏑 Creating field hockey clubs...");
-
-  const clubs = await Promise.all([
-    // Spanish field hockey clubs
-    prisma.club.create({
-      data: {
-        id: clubUsers[0].id,
-        managedByFirstName: "Admin",
-        managedByLastName: "Club 0",
-        name: "Club de Campo Villa de Madrid",
-        city: "Madrid",
-        country: "ES",
-        league: "División de Honor",
-        foundedYear: 1929,
-        description: "One of the most prestigious field hockey clubs in Spain",
-        bio: "Excellence in field hockey since 1929",
-        logo: "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/clubs/ccvm_logo.png",
-        coverImage:
-          "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=1200&h=400&fit=crop",
-        isVerified: true,
-        benefits: [
-          "Professional Coaching",
-          "International Tours",
-          "Full Medical Support",
-          "Sponsorship Opportunities",
-        ],
-      },
-    }),
-    prisma.club.create({
-      data: {
-        id: clubUsers[1].id,
-        managedByFirstName: "Admin",
-        managedByLastName: "Club 1",
-        name: "RC Polo Barcelona",
-        city: "Barcelona",
-        country: "ES",
-        league: "División de Honor",
-        foundedYear: 1897,
-        description:
-          "Historic Barcelona field hockey club with multiple championships",
-        bio: "Tradition and excellence in field hockey",
-        logo: "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/clubs/rcpolo_logo.png",
-        coverImage:
-          "https://images.unsplash.com/photo-1517836357463-d25ddfcbf042?w=1200&h=400&fit=crop",
-        isVerified: true,
-        benefits: [
-          "Elite Training Facilities",
-          "Gym Access",
-          "Player Networking",
-          "High Performance Center",
-        ],
-      },
-    }),
-    prisma.club.create({
-      data: {
-        id: clubUsers[2].id,
-        managedByFirstName: "Admin",
-        managedByLastName: "Club 2",
-        name: "Real Club de Polo",
-        city: "Barcelona",
-        country: "ES",
-        league: "División de Honor",
-        foundedYear: 1942,
-        logo: "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/clubs/realclubpolo_logo.png",
-        coverImage:
-          "https://images.unsplash.com/photo-1536502262293-38cffbe24cbf?w=1200&h=400&fit=crop",
-        isVerified: true,
-        benefits: ["Swimming Pool", "Social Events", "Tennis Courts"],
-      },
-    }),
-    prisma.club.create({
-      data: {
-        id: clubUsers[3].id,
-        managedByFirstName: "Admin",
-        managedByLastName: "Club 3",
-        name: "CD Terrassa HC",
-        city: "Terrassa",
-        country: "ES",
-        league: "División de Honor",
-        foundedYear: 1952,
-        description: "European champion field hockey club",
-        logo: "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/clubs/cdterrassa_logo.png",
-        coverImage:
-          "https://images.unsplash.com/photo-1451186580459-32d7a204ebf1?w=1200&h=400&fit=crop",
-        isVerified: true,
-        benefits: ["Youth Academy", "Video Analysis", "Nutrition Planning"],
-      },
-    }),
-    prisma.club.create({
-      data: {
-        id: clubUsers[4].id,
-        managedByFirstName: "Admin",
-        managedByLastName: "Club 4",
-        name: "Atlètic Terrassa HC",
-        city: "Terrassa",
-        country: "ES",
-        league: "División de Honor",
-        foundedYear: 1952,
-        logo: "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/clubs/atleticterrassa_logo.png",
-        coverImage:
-          "https://images.unsplash.com/photo-1483389127117-b6a2102724ae?w=1200&h=400&fit=crop",
-        isVerified: true,
-        benefits: [
-          "Indoor Hockey Pitch",
-          "Summer Camps",
-          "Psychological Support",
-        ],
-      },
-    }),
-    // Argentinian field hockey clubs
-    prisma.club.create({
-      data: {
-        id: clubUsers[5].id,
-        managedByFirstName: "Admin",
-        managedByLastName: "Club 5",
-        name: "Club Atlético San Isidro",
-        city: "Buenos Aires",
-        country: "AR",
-        league: "Metropolitano A",
-        foundedYear: 1902,
-        description: "Historic Argentine field hockey powerhouse",
-        logo: "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/clubs/sanisidro_logo.png",
-        coverImage:
-          "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=1200&h=400&fit=crop",
-        isVerified: true,
-        benefits: [
-          "Professional Scout Access",
-          "Career Mentoring",
-          "Physiotherapy",
-        ],
-      },
-    }),
-    prisma.club.create({
-      data: {
-        id: clubUsers[6].id,
-        managedByFirstName: "Admin",
-        managedByLastName: "Club 6",
-        name: "Club Atletico Belgrano",
-        city: "Buenos Aires",
-        country: "AR",
-        league: "Metropolitano A",
-        foundedYear: 1896,
-        logo: "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/clubs/belgrano_logo.png",
-        coverImage:
-          "https://images.unsplash.com/photo-1552531221-5a0d68c72660?w=1200&h=400&fit=crop",
-        isVerified: true,
-        benefits: [
-          "Education Scholarships",
-          "Language Classes",
-          "Free Equipment",
-        ],
-      },
-    }),
-    prisma.club.create({
-      data: {
-        id: clubUsers[7].id,
-        managedByFirstName: "Admin",
-        managedByLastName: "Club 7",
-        name: "Gimnasia y Esgrima Buenos Aires",
-        city: "Buenos Aires",
-        country: "AR",
-        league: "Metropolitano A",
-        foundedYear: 1880,
-        description: "One of Argentina's oldest sports clubs",
-        logo: "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/clubs/gimnasia_logo.png",
-        coverImage:
-          "https://images.unsplash.com/photo-1505666287802-931dc83948e9?w=1200&h=400&fit=crop",
-        isVerified: true,
-        benefits: [
-          "Multi-sport Facilities",
-          "Historical Museum",
-          "Competitive Leagues",
-        ],
-      },
-    }),
-    prisma.club.create({
-      data: {
-        id: clubUsers[8].id,
-        managedByFirstName: "Admin",
-        managedByLastName: "Club 8",
-        name: "Club Italiano",
-        city: "Buenos Aires",
-        country: "AR",
-        league: "Metropolitano A",
-        foundedYear: 1900,
-        logo: "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/clubs/italiano_logo.png",
-        coverImage:
-          "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=1200&h=400&fit=crop",
-        isVerified: false,
-        benefits: [
-          "Cultural Exchange",
-          "Family Memberships",
-          "Discounts on Gear",
-        ],
-      },
-    }),
-    prisma.club.create({
-      data: {
-        id: clubUsers[9].id,
-        managedByFirstName: "Admin",
-        managedByLastName: "Club 9",
-        name: "Lomas Athletic Club",
-        city: "Lomas de Zamora",
-        country: "AR",
-        league: "Metropolitano A",
-        foundedYear: 1891,
-        logo: "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/clubs/lomas_logo.png",
-        coverImage:
-          "https://images.unsplash.com/photo-1517836357463-d25ddfcbf042?w=1200&h=400&fit=crop",
-        isVerified: true,
-        benefits: ["Grass Fields", "Syntetic Pitches", "Personal Training"],
-      },
-    }),
-    // International clubs
-    prisma.club.create({
-      data: {
-        id: clubUsers[10].id,
-        managedByFirstName: "Admin",
-        managedByLastName: "Club 10",
-        name: "HC Rotterdam",
-        city: "Rotterdam",
-        country: "NL",
-        league: "Hoofdklasse",
-        foundedYear: 1925,
-        logo: "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/clubs/rotterdam_logo.png",
-        coverImage:
-          "https://images.unsplash.com/photo-1536502262293-38cffbe24cbf?w=1200&h=400&fit=crop",
-        isVerified: true,
-        benefits: [
-          "International Exposure",
-          "Sponsorship Deals",
-          "Top-tier Competition",
-        ],
-      },
-    }),
-    prisma.club.create({
-      data: {
-        id: clubUsers[11].id,
-        managedByFirstName: "Admin",
-        managedByLastName: "Club 11",
-        name: "Amsterdam HC",
-        city: "Amsterdam",
-        country: "NL",
-        league: "Hoofdklasse",
-        foundedYear: 1892,
-        logo: "https://res.cloudinary.com/dlv9qzhzr/image/upload/hockey-connect/clubs/amsterdam_logo.png",
-        coverImage:
-          "https://images.unsplash.com/photo-1483389127117-b6a2102724ae?w=1200&h=400&fit=crop",
-        isVerified: true,
-        benefits: [
-          "Elite Hockey Network",
-          "Career Opportunities",
-          "Housing Support",
-        ],
-      },
-    }),
-  ]);
-
-  console.log(`✅ Created ${clubs.length} clubs\n`);
+  console.log(`✅ Created ${clubs.length} club accounts (User + Club)\n`);
 
   // ========== PLAYERS ==========
   console.log("🏃 Creating field hockey players...");
@@ -994,42 +917,13 @@ async function main() {
 
   console.log(`✅ Created super admin: ${superAdmin.email}\n`);
 
-  // ========== ASSIGN ADMINS, POPULATE CLUBS & ASSIGN MEMBERS ==========
-  console.log(
-    "🔗 Populating complete club data and assigning admins/members...",
-  );
-
-  for (let index = 0; index < clubs.length; index++) {
-    const club = clubs[index];
-    await prisma.club.update({
-      where: { id: club.id },
-      data: {
-        email:
-          club.email ||
-          `contact@${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}.com`,
-        phone:
-          club.phone ||
-          `+34 600 ${Math.floor(100000 + Math.random() * 900000)}`,
-        website:
-          club.website ||
-          `https://www.${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}.com`,
-        description:
-          club.description ||
-          `Welcome to ${club.name}, one of the premier field hockey clubs with a rich history and a passionate community.`,
-        bio:
-          club.bio ||
-          `Official account of ${club.name}. Join us on the pitch!`,
-        league: club.league || "Primera División",
-        instagram: `https://instagram.com/${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}`,
-        twitter: `https://x.com/${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}`,
-        facebook: `https://facebook.com/${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}`,
-        tiktok: `https://tiktok.com/@${club.name.replace(/[^a-zA-Z]/g, "").toLowerCase()}`,
-      },
-    });
-  }
+  // ========== ASSIGN MEMBERS ==========
+  // Club accounts are the clubs themselves, so only players and coaches join
+  // them as members. Each invitation comes from a club account.
+  console.log("🔗 Assigning members to clubs...");
 
   const clubMembersCreated = [];
-  const allMembers = [...players, ...coaches, ...clubUsers];
+  const allMembers = [...players, ...coaches];
   for (let index = 0; index < allMembers.length; index++) {
     const user = allMembers[index];
     const club = clubs[index % clubs.length];
@@ -1045,9 +939,6 @@ async function main() {
     clubMembersCreated.push(cm);
   }
 
-  console.log(
-    `✅ Each club now has a dedicated CLUB user as admin and fully populated data`,
-  );
   console.log(`✅ Created ${clubMembersCreated.length} club members\n`);
 
 
@@ -1122,24 +1013,31 @@ async function main() {
     },
   ];
 
-  for (const job of jobData) {
-    const randomClub = clubs[Math.floor(Math.random() * clubs.length)];
-    await prisma.jobOpportunity.create({
-      data: {
-        title: job.title,
-        description: job.desc,
-        positionType: job.type as any,
-        level: job.level as any,
-        clubId: randomClub.id,
-        country: randomClub.country,
-        city: randomClub.city,
-        salary: job.salary,
-        currency: job.currency as any,
-        status: Math.random() > 0.2 ? "OPEN" : "FILLED", // 80% open
-        benefits:
-          "Medical insurance, accommodation support, full equipment, training facilities",
-      },
-    });
+  // Deterministic on purpose: a fixed club per job and a fixed status, so the
+  // test accounts below always find the same OPEN / FILLED jobs after a reset.
+  const jobs = [];
+  for (let index = 0; index < jobData.length; index++) {
+    const job = jobData[index];
+    // 5 is coprime with 12 clubs: 7 jobs land on 7 different clubs
+    const jobClub = clubs[(index * 5) % clubs.length];
+    jobs.push(
+      await prisma.jobOpportunity.create({
+        data: {
+          title: job.title,
+          description: job.desc,
+          positionType: job.type as any,
+          level: job.level as any,
+          clubId: jobClub.id,
+          country: jobClub.country,
+          city: jobClub.city,
+          salary: job.salary,
+          currency: job.currency as any,
+          status: index === jobData.length - 1 ? "FILLED" : "OPEN", // last one is closed
+          benefits:
+            "Medical insurance, accommodation support, full equipment, training facilities",
+        },
+      }),
+    );
   }
 
   console.log(`✅ Created ${jobData.length} job opportunities\n`);
@@ -1195,6 +1093,28 @@ async function main() {
       matchDate: daysFromNow(50),
       salary: 70,
     },
+    {
+      club: clubs[3], // Terrassa
+      title: "Umpire - Liga Catalana Femenina",
+      desc: "Regional women's league round, two matches in one day. Regional license is enough.",
+      level: "AMATEUR",
+      licenseLevelRequired: "REGIONAL",
+      modality: "OUTDOOR",
+      umpireCategory: "FEMENINO",
+      matchDate: daysFromNow(28),
+      salary: 100,
+    },
+    {
+      club: clubs[6], // Buenos Aires
+      title: "Arbitro - Torneo Mayores Metropolitano",
+      desc: "Senior men's tournament final. National license required.",
+      level: "PROFESSIONAL",
+      licenseLevelRequired: "NACIONAL",
+      modality: "OUTDOOR",
+      umpireCategory: "MAYORES",
+      matchDate: daysFromNow(42),
+      salary: 160,
+    },
   ];
 
   const umpireJobs = [];
@@ -1222,18 +1142,119 @@ async function main() {
     );
   }
 
-  // umpire_garcia is umpires[0] (first entry of umpireData)
-  await prisma.jobApplication.create({
+  console.log(`✅ Created ${umpireJobs.length} umpire job opportunities\n`);
+
+  // ========== TEST-ACCOUNT ACTIVITY ==========
+  // The first player, coach and umpire are the accounts used for manual testing
+  // ("My applications", saved jobs, follow counters). Each gets applications in
+  // different states, saved jobs and follows to users and to clubs.
+  console.log("🧪 Creating activity for the test accounts...");
+
+  const testPlayer = players[0];
+  const testCoach = coaches[0];
+  const testUmpire = umpires[0];
+
+  const REVIEW_FLOW = ["PENDING", "UNDER_REVIEW", "ACCEPTED", "REJECTED"] as const;
+  const apply = async (
+    user: { id: string },
+    targetJobs: { id: string; clubId: string }[],
+    coverLetter: string,
+  ) => {
+    for (let index = 0; index < targetJobs.length && index < REVIEW_FLOW.length; index++) {
+      const status = REVIEW_FLOW[index];
+      await prisma.jobApplication.create({
+        data: {
+          jobOpportunityId: targetJobs[index].id,
+          userId: user.id,
+          status,
+          coverLetter,
+          ...(status !== "PENDING" && {
+            reviewedAt: new Date(),
+            reviewedBy: targetJobs[index].clubId,
+            notes: `Reviewed by the club (${status.toLowerCase().replace("_", " ")})`,
+          }),
+        },
+      });
+    }
+    return targetJobs.slice(0, REVIEW_FLOW.length).map((job) => job.id);
+  };
+  const saveJobs = async (user: { id: string }, targetJobs: { id: string }[]) => {
+    for (const job of targetJobs) {
+      await prisma.savedJob.create({ data: { userId: user.id, jobOpportunityId: job.id } });
+    }
+  };
+  const followUser = (follower: { id: string }, target: { id: string }) =>
+    prisma.follow.create({
+      data: {
+        followerId: follower.id,
+        followerType: "USER",
+        followingId: target.id,
+        followingType: "USER",
+        followingUserId: target.id,
+      },
+    });
+  const followClub = (follower: { id: string }, club: { id: string }) =>
+    prisma.follow.create({
+      data: {
+        followerId: follower.id,
+        followerType: "USER",
+        followingId: club.id,
+        followingType: "CLUB",
+        followingClubId: club.id,
+      },
+    });
+
+  const playerJobs = jobs.filter((job) => job.positionType === "PLAYER");
+  const coachJobs = [
+    ...jobs.filter((job) => job.positionType === "COACH"),
+    ...jobs.filter((job) => job.positionType === "STAFF"),
+  ];
+
+  const playerApplied = await apply(
+    testPlayer,
+    playerJobs,
+    "Motivated and ready to join the squad. Available immediately.",
+  );
+  const coachApplied = await apply(
+    testCoach,
+    coachJobs,
+    "Licensed coach with years of experience developing players.",
+  );
+  await apply(
+    testUmpire,
+    umpireJobs,
+    "International license holder with 600+ top-flight matches. Available on the date.",
+  );
+
+  // Saved jobs: open jobs the account has not applied to (umpire: the two left)
+  const openJobs = jobs.filter((job) => job.status === "OPEN");
+  await saveJobs(testPlayer, openJobs.filter((job) => !playerApplied.includes(job.id)).slice(0, 3));
+  await saveJobs(testCoach, openJobs.filter((job) => !coachApplied.includes(job.id)).slice(0, 3));
+  await saveJobs(testUmpire, umpireJobs.slice(4, 6));
+
+  // Follows to users and to clubs, plus a few back so the counters are not 0
+  for (const target of [players[1], players[2], coaches[0]]) await followUser(testPlayer, target);
+  for (const target of [clubs[0], clubs[5], clubs[10]]) await followClub(testPlayer, target);
+  for (const target of [players[0], coaches[1], umpires[0]]) await followUser(testCoach, target);
+  for (const target of [clubs[1], clubs[3]]) await followClub(testCoach, target);
+  for (const target of [coaches[0], umpires[1]]) await followUser(testUmpire, target);
+  for (const target of [clubs[0], clubs[4], clubs[11]]) await followClub(testUmpire, target);
+  await followUser(players[1], testPlayer);
+  await followUser(coaches[1], testCoach);
+  await followUser(umpires[1], testUmpire);
+  // A club account following a person (follower type CLUB, same id as the user)
+  await prisma.follow.create({
     data: {
-      jobOpportunityId: umpireJobs[0].id,
-      userId: umpires[0].id,
-      coverLetter:
-        "International license holder with 600+ top-flight matches. Available on the date.",
+      followerId: clubUsers[0].id,
+      followerType: "CLUB",
+      followingId: testPlayer.id,
+      followingType: "USER",
+      followingUserId: testPlayer.id,
     },
   });
 
   console.log(
-    `✅ Created ${umpireJobs.length} umpire job opportunities (+1 application from ${umpires[0].username})\n`,
+    `✅ Test accounts ready: ${testPlayer.email}, ${testCoach.email}, ${testUmpire.email}\n`,
   );
 
   // ========== TRAJECTORIES ==========
@@ -1425,10 +1446,35 @@ async function main() {
 
   console.log(`✅ Created ${trajCount} career trajectories\n`);
 
+  // ========== INTEGRITY CHECKS ==========
+  // The DB trigger fills User.clubNameKey for every CLUB account and the unique
+  // index rejects repeats; this fails the seed loudly if either is missing.
+  const duplicateClubKeys = await prisma.$queryRaw<{ clubNameKey: string; n: bigint }[]>`
+    SELECT "clubNameKey", count(*) AS n FROM "User"
+    WHERE "role" = 'CLUB' GROUP BY "clubNameKey" HAVING count(*) > 1`;
+  if (duplicateClubKeys.length > 0) {
+    throw new Error(
+      `Two clubs share a clubNameKey: ${duplicateClubKeys.map((row) => row.clubNameKey).join(", ")}`,
+    );
+  }
+  const clubsWithoutKey = await prisma.user.count({
+    where: { role: "CLUB", clubNameKey: null },
+  });
+  if (clubsWithoutKey > 0) {
+    throw new Error(`${clubsWithoutKey} CLUB account(s) have no clubNameKey (trigger missing?)`);
+  }
+  console.log(`✅ ${clubUsers.length} unique club names (clubNameKey)\n`);
+
   console.log("🎉 Database seeded successfully!\n");
   console.log("📊 Summary:");
-  console.log(`   - ${clubs.length} clubs`);
-  console.log(`   - ${clubUsers.length} club users (role CLUB)`);
+  console.log(`   - ${clubs.length} club accounts (User role CLUB + Club)`);
+  console.log(`   - broken image URLs (stored as null): ${brokenImageUrls.length}`);
+  for (const entry of brokenImageUrls) console.log(`       ${entry}`);
+  if (unverifiedImageUrls.length > 0) {
+    console.log(
+      `   - ${unverifiedImageUrls.length} image URL(s) could not be checked (offline?); kept as is`,
+    );
+  }
   console.log(`   - 1 super admin`);
   console.log(`   - ${players.length} players`);
   console.log(`   - ${coaches.length} coaches`);

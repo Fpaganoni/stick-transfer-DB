@@ -24,8 +24,12 @@ const mockPrismaService = {
   },
   user: {
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     findMany: jest.fn(),
+    update: jest.fn(),
   },
+  // Array form only: every operation is already a promise
+  $transaction: jest.fn((operations: Promise<unknown>[]) => Promise.all(operations)),
 };
 
 const mockEventEmitter = {
@@ -54,13 +58,14 @@ describe("ClubsService", () => {
 
   // ── findAll ───────────────────────────────────────────────────────────────
   describe("findAll", () => {
-    it("joins only the owning user: members and teams are not loaded for a list", async () => {
+    it("lists clubs of active owners, joining only the owning user (no members or teams)", async () => {
       const mockClubs = [{ id: "club-1", name: "HC Barcelona" }];
       prisma.club.findMany.mockResolvedValue(mockClubs);
 
       const result = await service.findAll();
 
       expect(prisma.club.findMany).toHaveBeenCalledWith({
+        where: { user: { isActive: true, role: "CLUB" } },
         orderBy: [{ createdAt: "desc" }, { id: "asc" }],
         skip: 0,
         take: 50,
@@ -177,12 +182,14 @@ describe("ClubsService", () => {
       const result = await service.create(input);
 
       expect(prisma.club.findUnique).toHaveBeenCalledWith({ where: { id: "user-1" } });
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: "user-1" },
+        data: { name: "HC Madrid", city: "Madrid", country: "ES" },
+      });
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(prisma.club.create).toHaveBeenCalledWith({
         data: {
           id: "user-1",
-          name: input.name,
-          city: input.city,
-          country: input.country,
           managedByFirstName: input.managedByFirstName,
           managedByLastName: input.managedByLastName,
           benefits: [],
@@ -273,17 +280,20 @@ describe("ClubsService", () => {
 
         await service.create({ ...input, country: " ar " });
 
-        expect(prisma.club.create.mock.calls[0][0].data.country).toBe("AR");
+        expect(prisma.user.update.mock.calls[0][0].data.country).toBe("AR");
       });
 
       it.each([["Argentina"], [""], ["🇦🇷 Argentina"]])(
-        "rejects %p with COUNTRY_INVALID before touching the DB",
+        "rejects %p with COUNTRY_INVALID before writing anything",
         async (country) => {
+          prisma.user.findUnique.mockResolvedValue({ id: "user-5", name: "Lomas", role: "CLUB" });
+          prisma.club.findUnique.mockResolvedValue(null);
           await expect(service.create({ ...input, country })).rejects.toMatchObject({
             code: "VALIDATION_ERROR",
             fields: [expect.objectContaining({ field: "country", code: "COUNTRY_INVALID" })],
           });
-          expect(prisma.user.findUnique).not.toHaveBeenCalled();
+          expect(prisma.$transaction).not.toHaveBeenCalled();
+          expect(prisma.user.update).not.toHaveBeenCalled();
           expect(prisma.club.create).not.toHaveBeenCalled();
         },
       );
@@ -365,6 +375,8 @@ describe("ClubsService", () => {
 
   describe("updateClub - links and contact", () => {
     beforeEach(() => {
+      prisma.user.findUnique.mockResolvedValue({ role: "CLUB", avatar: null, coverImage: null });
+      prisma.user.findFirst.mockResolvedValue(null);
       prisma.club.update.mockResolvedValue({ id: "club-1" });
     });
 
@@ -449,11 +461,18 @@ describe("ClubsService", () => {
     const originalUrl = process.env.CLOUDINARY_URL;
     const OWN_LOGO =
       "https://res.cloudinary.com/demo/image/upload/v1/stick-transfer/clubs/club-1/logo.png";
+    const OWN_USER_AVATAR =
+      "https://res.cloudinary.com/demo/image/upload/v1/stick-transfer/users/club-1/avatar.png";
     const LEGACY_COVER = "https://images.unsplash.com/photo-1";
 
     beforeEach(() => {
       process.env.CLOUDINARY_URL = "cloudinary://k:s@demo";
-      prisma.club.findUnique.mockResolvedValue({ logo: null, coverImage: LEGACY_COVER });
+      prisma.user.findUnique.mockResolvedValue({
+        role: "CLUB",
+        avatar: null,
+        coverImage: LEGACY_COVER,
+      });
+      prisma.user.findFirst.mockResolvedValue(null);
       prisma.club.update.mockResolvedValue({ id: "club-1" });
     });
 
@@ -462,20 +481,27 @@ describe("ClubsService", () => {
       else process.env.CLOUDINARY_URL = originalUrl;
     });
 
-    const updatedData = () => prisma.club.update.mock.calls[0][0].data;
+    const userData = () => prisma.user.update.mock.calls[0][0].data;
 
-    it("saves a logo uploaded to the club's own folder", async () => {
+    it("saves a logo uploaded to the club's own folder as the owner's avatar", async () => {
       await service.updateClub("club-1", { logo: OWN_LOGO });
-      expect(updatedData()).toEqual(expect.objectContaining({ logo: OWN_LOGO }));
+      expect(userData()).toEqual(expect.objectContaining({ avatar: OWN_LOGO }));
+      expect(userData()).not.toHaveProperty("logo");
+      expect(prisma.club.update.mock.calls[0][0].data).not.toHaveProperty("logo");
     });
 
-    it("rejects a logo from a foreign host with IMAGE_URL_INVALID", async () => {
+    it("also accepts a logo from the owner's users folder (same id)", async () => {
+      await service.updateClub("club-1", { logo: OWN_USER_AVATAR });
+      expect(userData()).toEqual(expect.objectContaining({ avatar: OWN_USER_AVATAR }));
+    });
+
+    it("rejects a logo from a foreign host with IMAGE_URL_INVALID on field logo", async () => {
       await expect(
         service.updateClub("club-1", { logo: "https://evil.com/x.png" }),
       ).rejects.toMatchObject({
         fields: [expect.objectContaining({ field: "logo", code: "IMAGE_URL_INVALID" })],
       });
-      expect(prisma.club.update).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
     it("rejects a logo from another club's folder", async () => {
@@ -487,7 +513,7 @@ describe("ClubsService", () => {
 
     it("accepts the stored legacy coverImage resent by the form", async () => {
       await service.updateClub("club-1", { coverImage: LEGACY_COVER });
-      expect(updatedData()).toEqual(expect.objectContaining({ coverImage: LEGACY_COVER }));
+      expect(userData()).toEqual(expect.objectContaining({ coverImage: LEGACY_COVER }));
     });
 
     it("rejects a new coverImage that is not in the club's folder", async () => {
@@ -500,26 +526,31 @@ describe("ClubsService", () => {
 
     it("removes the image when logo is an empty string", async () => {
       await service.updateClub("club-1", { logo: "" });
-      expect(updatedData()).toEqual(expect.objectContaining({ logo: null }));
+      expect(userData()).toEqual(expect.objectContaining({ avatar: null }));
     });
 
-    it("does not read the club when no image is sent", async () => {
+    it("always reads the target to check it is a CLUB, even when no image is sent", async () => {
       await service.updateClub("club-1", { name: "New" });
-      expect(prisma.club.findUnique).not.toHaveBeenCalled();
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { id: "club-1" },
+        select: { role: true, avatar: true, coverImage: true },
+      });
     });
 
-    it("fails with NotFound when the club does not exist", async () => {
-      prisma.club.findUnique.mockResolvedValue(null);
-      await expect(service.updateClub("club-1", { logo: OWN_LOGO })).rejects.toThrow(
-        NotFoundException,
-      );
-    });
+    it.each([[null], [{ role: "PLAYER", avatar: null, coverImage: null }]])(
+      "fails with NotFound when the target is missing or not a CLUB (%p)",
+      async (target) => {
+        prisma.user.findUnique.mockResolvedValue(target);
+        await expect(service.updateClub("club-1", { logo: OWN_LOGO })).rejects.toThrow(
+          NotFoundException,
+        );
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+      },
+    );
 
-    it("saves city and the normalized country code", async () => {
-      await service.updateClub("club-1", { city: "Madrid", country: "es" });
-      expect(updatedData()).toEqual(
-        expect.objectContaining({ city: "Madrid", country: "ES" }),
-      );
+    it("saves city and the normalized country code on the owner user", async () => {
+      await service.updateClub("club-1", { city: " Madrid ", country: "es" });
+      expect(userData()).toEqual(expect.objectContaining({ city: "Madrid", country: "ES" }));
     });
 
     it.each([["Spain"], [""], ["   "]])(
@@ -529,25 +560,22 @@ describe("ClubsService", () => {
           code: "VALIDATION_ERROR",
           fields: [expect.objectContaining({ field: "country", code: "COUNTRY_INVALID" })],
         });
-        expect(prisma.club.update).not.toHaveBeenCalled();
+        expect(prisma.$transaction).not.toHaveBeenCalled();
       },
     );
 
-    it.each(["", "   "])("rejects a blank city %p with 400", async (city) => {
-      await expect(service.updateClub("club-1", { city })).rejects.toThrow(
-        BadRequestException,
-      );
-      expect(prisma.club.update).not.toHaveBeenCalled();
+    it.each(["", "   "])("rejects a blank city %p with a 400 validation error", async (city) => {
+      await expect(service.updateClub("club-1", { city })).rejects.toMatchObject({
+        code: "VALIDATION_ERROR",
+        fields: [expect.objectContaining({ field: "city", code: "FIELD_REQUIRED" })],
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
     it("ignores null city/country instead of nulling required columns", async () => {
-      await service.updateClub("club-1", {
-        name: "New",
-        city: null as any,
-        country: null as any,
-      });
-      expect(updatedData()).not.toHaveProperty("city");
-      expect(updatedData()).not.toHaveProperty("country");
+      await service.updateClub("club-1", { name: "New", city: null, country: null });
+      expect(userData()).not.toHaveProperty("city");
+      expect(userData()).not.toHaveProperty("country");
     });
   });
 

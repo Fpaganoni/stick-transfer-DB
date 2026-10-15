@@ -69,10 +69,12 @@ export function assertOwnedImageUrl(opts: {
   field: ImageField;
   value: string | null | undefined;
   current: string | null | undefined;
-  folder: string;
+  /** One folder, or several that are all valid for this owner (a CLUB owns users/{id} and clubs/{id}). */
+  folder: string | readonly string[];
   cloudName: string | undefined;
 }): string | null | undefined {
-  const { field, value, current, folder, cloudName } = opts;
+  const { field, value, current, cloudName } = opts;
+  const folders = typeof opts.folder === "string" ? [opts.folder] : opts.folder;
 
   if (value === undefined) return undefined;
   if (value === null || value === "") return null;
@@ -90,7 +92,7 @@ export function assertOwnedImageUrl(opts: {
     throw invalidImage(field, `${field} must be an image uploaded through the app`);
   }
 
-  if (!cloudName || !isInsideFolder(url, cloudName, folder)) {
+  if (!cloudName || !folders.some((folder) => isInsideFolder(url, cloudName, folder))) {
     throw invalidImage(field, `${field} must be an image uploaded through the app`);
   }
   return value;
@@ -103,21 +105,25 @@ type ImageValues = Partial<Record<ImageField, string | null | undefined>>;
  * the stored `current` values. Returns only the fields to write ("" becomes null).
  */
 export function resolveOwnedImages(opts: {
-  kind: ImageOwnerKind;
+  /** Owner folders whose urls are accepted. A CLUB passes ["users", "clubs"]: same id, both folders. */
+  kind: ImageOwnerKind | readonly ImageOwnerKind[];
   ownerId: string;
   input: ImageValues;
   current: ImageValues;
+  /** Error `field` to report instead of the column name (updateClub reports `logo` for User.avatar). */
+  errorFields?: Partial<Record<ImageField, ImageField>>;
 }): Partial<Record<ImageField, string | null>> {
-  const folder = ownerImageFolder(opts.kind, opts.ownerId);
+  const kinds = typeof opts.kind === "string" ? [opts.kind] : opts.kind;
+  const folders = kinds.map((kind) => ownerImageFolder(kind, opts.ownerId));
   const cloudName = cloudNameFromEnv();
   const result: Partial<Record<ImageField, string | null>> = {};
 
   for (const field of ["avatar", "coverImage", "logo"] as const) {
     const checked = assertOwnedImageUrl({
-      field,
+      field: opts.errorFields?.[field] ?? field,
       value: opts.input[field],
       current: opts.current[field],
-      folder,
+      folder: folders,
       cloudName,
     });
     if (checked !== undefined) result[field] = checked;

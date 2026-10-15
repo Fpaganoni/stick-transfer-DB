@@ -4,7 +4,7 @@ import { PrismaService } from "../prisma.service";
 
 const mockPrismaService = {
   $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
-  user: { count: jest.fn(), update: jest.fn() },
+  user: { count: jest.fn(), update: jest.fn(), findUnique: jest.fn() },
   club: { count: jest.fn() },
   jobOpportunity: { count: jest.fn() },
   jobApplication: { count: jest.fn() },
@@ -202,6 +202,7 @@ describe("AdminService", () => {
 
   describe("changeUserRole", () => {
     it("should update a user's role", async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: "PLAYER" });
       prisma.user.update.mockResolvedValue({ id: "user-1", role: "COACH" });
 
       const result = await service.changeUserRole("user-1", "COACH" as any);
@@ -211,6 +212,40 @@ describe("AdminService", () => {
         data: { role: "COACH" },
       });
       expect(result).toEqual({ id: "user-1", role: "COACH" });
+    });
+
+    it("rejects a role change to CLUB: a club needs its Club row, name key and location", async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: "PLAYER" });
+
+      await expect(service.changeUserRole("user-1", "CLUB" as any)).rejects.toThrow(
+        "Roles cannot be changed to or from CLUB",
+      );
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it("rejects a role change away from CLUB", async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: "CLUB" });
+
+      await expect(service.changeUserRole("club-1", "PLAYER" as any)).rejects.toThrow(
+        "Roles cannot be changed to or from CLUB",
+      );
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it("allows a no-op CLUB to CLUB change", async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: "CLUB" });
+      prisma.user.update.mockResolvedValue({ id: "club-1", role: "CLUB" });
+
+      await service.changeUserRole("club-1", "CLUB" as any);
+
+      expect(prisma.user.update).toHaveBeenCalled();
+    });
+
+    it("answers 404 for an unknown user", async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(service.changeUserRole("ghost", "COACH" as any)).rejects.toThrow("User not found");
+      expect(prisma.user.update).not.toHaveBeenCalled();
     });
   });
 

@@ -8,6 +8,7 @@ export type AppErrorCode =
   | "VALIDATION_ERROR"
   | "EMAIL_TAKEN"
   | "USERNAME_TAKEN"
+  | "CLUB_NAME_TAKEN"
   | "INVALID_CREDENTIALS"
   | "RATE_LIMITED"
   | "INTERNAL_ERROR";
@@ -59,6 +60,16 @@ export class AppError extends HttpException {
       "Username not available",
       HttpStatus.CONFLICT,
       "username",
+    );
+  }
+
+  /** `field` is "name" (updateClub/updateUser) or "clubName" (register). */
+  static clubNameTaken(field: "name" | "clubName" = "name") {
+    return new AppError(
+      "CLUB_NAME_TAKEN",
+      "Club name not available",
+      HttpStatus.CONFLICT,
+      field,
     );
   }
 

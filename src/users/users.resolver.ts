@@ -26,9 +26,13 @@ import { Throttle } from "@nestjs/throttler";
 import { AppError, FieldError } from "../common/errors/app.error";
 import { mapUniqueViolation } from "../common/errors/unique-violation";
 import { checkCountry, normalizeCountry } from "../common/geo/countries";
+import { SELF_VIEW } from "../common/self-view";
+import { hasControlOrFormatChars, normalizeClubDisplayName } from "../clubs/club-name";
+import { checkManagerName } from "../clubs/clubs.service";
 import {
   checkDateOfBirth,
   checkEmail,
+  checkName,
   checkRegisterCredentials,
   checkUsername,
   normalizeEmail,
@@ -36,12 +40,6 @@ import {
   resolvePosition,
   validateUsernameOrThrow,
 } from "./validation/credentials";
-
-/**
- * Marks a user object as the caller's own profile when the session cookie was
- * only just issued (register/login), so it is not yet present on the request.
- */
-const SELF_VIEW = Symbol("selfView");
 
 @Resolver("User")
 export class UsersResolver {
@@ -87,11 +85,16 @@ export class UsersResolver {
 
   @Query(() => Boolean)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  async isUsernameAvailable(@Args("username") username: string) {
+  async isUsernameAvailable(
+    @Context() context: any,
+    @Args("username") username: string,
+  ) {
     const normalized = normalizeUsername(username) ?? "";
     const invalid = checkUsername(normalized);
     if (invalid) throw AppError.validation([invalid]);
-    return !(await this.usersService.isUsernameTaken(normalized));
+    // The profile form validates the username on edit: your own is available to you.
+    const currentUser = this.getCurrentUser(context);
+    return !(await this.usersService.isUsernameTaken(normalized, currentUser?.userId));
   }
 
   @Mutation(() => Object)
@@ -111,21 +114,49 @@ export class UsersResolver {
     @Args("managedByFirstName", { nullable: true }) managedByFirstName?: string,
     @Args("managedByLastName", { nullable: true }) managedByLastName?: string,
   ) {
+    // Normalize role to uppercase for case-insensitive validation
+    // A blank role means "not provided" (defaults to PLAYER), not an unknown role.
+    const normalizedRole = role?.trim().toUpperCase() || undefined;
+    const isClub = normalizedRole === "CLUB";
+
     // Normalizes (trim/lowercase) and validates email, name, username, password
     // and dateOfBirth. Errors are merged with the role/position ones below so the
-    // client gets a single VALIDATION_ERROR.
-    const { values, errors: roleErrors } = checkRegisterCredentials({
+    // client gets a single VALIDATION_ERROR. A CLUB account IS the club, so its
+    // name is clubName and the `name` argument is ignored.
+    const { values, errors: credentialErrors } = checkRegisterCredentials({
       email: rawEmail,
-      name: rawName,
+      name: isClub ? (clubName ?? "") : rawName,
       username: rawUsername,
       password: rawPassword,
       dateOfBirth,
     });
-    const { email, name, username, password } = values;
-
-    // Normalize role to uppercase for case-insensitive validation
-    // A blank role means "not provided" (defaults to PLAYER), not an unknown role.
-    const normalizedRole = role?.trim().toUpperCase() || undefined;
+    const { email, username, password } = values;
+    const name = isClub ? normalizeClubDisplayName(values.name) : values.name;
+    // For a CLUB, name problems belong to clubName (a missing one is FIELD_REQUIRED below).
+    const roleErrors: FieldError[] = isClub
+      ? credentialErrors.filter((e) => e.field !== "name")
+      : [...credentialErrors];
+    if (isClub && clubName?.trim()) {
+      const clubNameError = checkName(clubName);
+      if (clubNameError) roleErrors.push({ ...clubNameError, field: "clubName" });
+      else if (hasControlOrFormatChars(clubName)) {
+        roleErrors.push({
+          field: "clubName",
+          code: "NAME_INVALID",
+          message: "Name cannot contain control or invisible characters",
+        });
+      }
+    }
+    if (isClub) {
+      for (const [field, value] of [
+        ["managedByFirstName", managedByFirstName],
+        ["managedByLastName", managedByLastName],
+      ] as const) {
+        // A missing value is reported as FIELD_REQUIRED below; check only what was sent.
+        const managerError = value?.trim() ? checkManagerName(field, value) : null;
+        if (managerError) roleErrors.push(managerError);
+      }
+    }
 
     // SUPERADMIN cannot self-register
     if (
@@ -138,7 +169,7 @@ export class UsersResolver {
         message: "Invalid role. Allowed roles: PLAYER, COACH, CLUB, UMPIRE",
       });
     }
-    if (normalizedRole === "CLUB") {
+    if (isClub) {
       const required: [string, unknown][] = [
         ["clubName", clubName],
         ["country", country],
@@ -147,7 +178,7 @@ export class UsersResolver {
         ["managedByLastName", managedByLastName],
       ];
       for (const [field, value] of required) {
-        if (!value) {
+        if (typeof value !== "string" || !value.trim()) {
           roleErrors.push({
             field,
             code: "FIELD_REQUIRED",
@@ -173,8 +204,11 @@ export class UsersResolver {
     if (username && (await this.usersService.isUsernameTaken(username))) {
       throw AppError.usernameTaken();
     }
+    if (isClub) await this.clubsService.assertClubNameAvailable(name, null, "clubName");
 
     try {
+      // A CLUB user and its Club row are created in ONE write (nested create):
+      // a failure never leaves an orphan CLUB account.
       const user = await this.usersService.createUser({
         email,
         name,
@@ -182,28 +216,24 @@ export class UsersResolver {
         password,
         role: normalizedRole,
         country: countryCode,
-        city,
+        city: isClub ? city!.trim() : city,
         position: resolvedPosition.position,
         dateOfBirth,
+        clubProfile: isClub
+          ? {
+              managedByFirstName: managedByFirstName!.trim(),
+              managedByLastName: managedByLastName!.trim(),
+            }
+          : undefined,
       });
-
-      if (normalizedRole === "CLUB" && clubName) {
-        await this.clubsService.create({
-          userId: user.id,
-          name: clubName,
-          city: city!,
-          country: countryCode!,
-          managedByFirstName: managedByFirstName!,
-          managedByLastName: managedByLastName!,
-        });
-      }
+      if (isClub) await this.clubsService.notifyPendingVerification(user.id);
 
       const token = await this.authService.login(user);
       this.authService.setAuthCookie(context.res, token.access_token);
       return { ...user, [SELF_VIEW]: true };
     } catch (error) {
-      // Race: another request took the email/username after our pre-check.
-      throw mapUniqueViolation(error) ?? error;
+      // Race: another request took the email/username/club name after our pre-check.
+      throw mapUniqueViolation(error, { clubNameField: "clubName" }) ?? error;
     }
   }
 
@@ -404,14 +434,24 @@ export class UsersResolver {
     // undefined = untouched, null = clear, anything else must be a country code
     const countryError = checkCountry(country);
     if (countryError) profileErrors.push(countryError);
+    const nameError = name !== undefined ? checkName(name) : null;
+    if (nameError) profileErrors.push(nameError);
 
-    // position (PLAYER only) and multimedia (never UMPIRE) are judged by the
-    // stored role, not the caller's (an admin may edit someone else). Skip the
-    // lookup when neither is sent.
+    // position (PLAYER only), multimedia (never UMPIRE) and the club identity
+    // rules are judged by the stored role, not the caller's (an admin may edit
+    // someone else). Skip the lookup when none of them is sent.
     let resolvedPosition: string | null | undefined;
-    if (position !== undefined || multimedia !== undefined) {
+    let clubIdentityTarget = false;
+    if (
+      position !== undefined ||
+      multimedia !== undefined ||
+      name !== undefined ||
+      city !== undefined ||
+      country !== undefined
+    ) {
       const target = await this.usersService.findById(id);
       if (!target) throw new NotFoundException("User not found");
+      clubIdentityTarget = target.role === "CLUB";
       if (position !== undefined) {
         const result = resolvePosition(target.role, position);
         if (result.error) profileErrors.push(result.error);
@@ -427,22 +467,28 @@ export class UsersResolver {
     }
     if (profileErrors.length) throw AppError.validation(profileErrors);
 
+    // A CLUB account IS the club: the same rule as updateClub (unique club name,
+    // a city and a country are required) through ONE shared service method.
+    const clubIdentity = clubIdentityTarget
+      ? await this.clubsService.assertClubIdentityUpdate(id, { name, city, country })
+      : undefined;
+
     // Joining a club requires an accepted invitation; only admins can force it.
     if (clubId && currentUser.role !== "SUPERADMIN") {
       await this.usersService.assertActiveClubMember(id, clubId);
     }
 
     try {
-      return await this.usersService.updateUser(id, {
-        name,
+      const updated = await this.usersService.updateUser(id, {
+        name: clubIdentity?.name ?? name?.trim(),
         username,
         bio,
         avatar,
         coverImage,
         coverImagePosition,
         position: resolvedPosition,
-        country: country == null ? country : normalizeCountry(country),
-        city,
+        country: clubIdentity?.country ?? (country == null ? country : normalizeCountry(country)),
+        city: clubIdentity?.city ?? city,
         clubId,
         yearsOfExperience,
         multimedia,
@@ -461,9 +507,23 @@ export class UsersResolver {
         umpireCategories,
         umpireCertifications,
       });
+      this.clubsService.resetLoaders(context);
+      return updated;
     } catch (error) {
       throw mapUniqueViolation(error) ?? error;
     }
+  }
+
+  /**
+   * The club data of a CLUB account (null for every other role), so `me` and
+   * getUserByUsername return identity + club in one request. Batched per request.
+   */
+  @ResolveField()
+  async clubProfile(@Parent() user: any, @Context() context: any) {
+    if (user.role !== "CLUB") return null;
+    const club = await this.clubsService.loadClubProfile(context, user.id);
+    // Carry the "just registered/logged in" marker so managedBy is visible to its owner.
+    return club && user[SELF_VIEW] ? { ...club, [SELF_VIEW]: true } : club;
   }
 
   // Field resolver for trajectories

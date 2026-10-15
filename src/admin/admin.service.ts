@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { Role } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
 
@@ -7,6 +7,16 @@ export class AdminService {
   constructor(private prisma: PrismaService) {}
 
   async changeUserRole(userId: string, role: Role) {
+    // A CLUB is an identity (name key, Club row, required city/country) that a bare role
+    // switch cannot create or dismantle without leaving inconsistent data.
+    const current = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    if (!current) throw new NotFoundException("User not found");
+    if (current.role !== role && (current.role === "CLUB" || role === "CLUB")) {
+      throw new BadRequestException("Roles cannot be changed to or from CLUB");
+    }
     return this.prisma.user.update({
       where: { id: userId },
       data: { role },

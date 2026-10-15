@@ -24,6 +24,8 @@ export class UsersService {
     position?: string | null;
     /** Already validated as YYYY-MM-DD (see checkDateOfBirth). */
     dateOfBirth?: string;
+    /** Role CLUB only: created in the SAME write, so a failure never leaves a CLUB user without its Club. */
+    clubProfile?: { managedByFirstName: string; managedByLastName: string };
   }) {
     const hashed = data.password
       ? await bcrypt.hash(data.password, 10)
@@ -39,6 +41,7 @@ export class UsersService {
         city: data.city,
         position: data.position,
         dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
+        ...(data.clubProfile && { clubProfile: { create: data.clubProfile } }),
       },
     });
   }
@@ -69,10 +72,16 @@ export class UsersService {
     return !!found;
   }
 
-  /** Case-insensitive so it also catches legacy mixed-case usernames. */
-  async isUsernameTaken(username: string): Promise<boolean> {
+  /**
+   * Case-insensitive so it also catches legacy mixed-case usernames.
+   * `excludeUserId` lets a user keep their own username when editing a profile.
+   */
+  async isUsernameTaken(username: string, excludeUserId?: string): Promise<boolean> {
     const found = await this.prisma.user.findFirst({
-      where: { username: { equals: username, mode: "insensitive" } },
+      where: {
+        username: { equals: username, mode: "insensitive" },
+        ...(excludeUserId ? { NOT: { id: excludeUserId } } : {}),
+      },
       select: { id: true },
     });
     return !!found;
@@ -320,12 +329,14 @@ export class UsersService {
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { avatar: true, coverImage: true },
+      select: { role: true, avatar: true, coverImage: true },
     });
     if (!user) throw new BadRequestException("User not found");
 
     return resolveOwnedImages({
-      kind: "users",
+      // A CLUB account is the club (same id): its crest/cover may have been
+      // uploaded through the CLUB_* targets too.
+      kind: user.role === "CLUB" ? ["users", "clubs"] : "users",
       ownerId: userId,
       input: { avatar, coverImage },
       current: user,

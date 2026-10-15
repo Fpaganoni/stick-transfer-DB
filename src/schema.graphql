@@ -53,8 +53,10 @@ type User {
   id: ID!
   """Only visible to the user themself and super admins; null for everyone else."""
   email: String
+  """For role CLUB this is the CLUB name (the club account IS the club)."""
   name: String!
   username: String
+  """For role CLUB this is the club crest (Club.logo reads this field)."""
   avatar: String
   coverImage: String
   coverImagePosition: String
@@ -66,6 +68,12 @@ type User {
   city: String
   clubId: String
   club: Club
+  """
+  Club data of a CLUB account (null for every other role): description, league,
+  contacts, verification... Fetched together with the identity in one request
+  (me / getUserByUsername).
+  """
+  clubProfile: Club
   yearsOfExperience: Int
   cvUrl: String
   """Always empty for UMPIRE."""
@@ -114,17 +122,34 @@ type UserBasicInfo {
   avatar: String
 }
 
+"""
+A club is the club-side data of a User with role CLUB (same id). Its IDENTITY
+is the owner User: name = User.name, logo = User.avatar, coverImage /
+coverImagePosition / bio / city / country = the same User fields. They are kept
+here as resolved fields so existing queries keep working.
+"""
 type Club {
   id: ID!
+  """The owner User.name."""
   name: String!
+  """Club.logo is the owner User.avatar."""
   logo: String
+  """The owner User.coverImage."""
   coverImage: String
+  """The owner User.coverImagePosition."""
   coverImagePosition: String
   description: String
+  """Short bio: the owner User.bio."""
   bio: String
+  """The owner User.city (always set for a club)."""
   city: String!
+  """The owner User.country (always set for a club)."""
   country: String!
-  managedBy: ClubManager!
+  """
+  PRIVACY: the person who manages the club. Only visible to the club itself and
+  super admins; null for everyone else.
+  """
+  managedBy: ClubManager
   league: String
   foundedYear: Int
   email: String
@@ -138,7 +163,7 @@ type Club {
   verificationStatus: VerificationStatus!
   verificationDoc: String
   benefits: [String!]!
-  videos: [String!]!
+  videos: [String!]! @deprecated(reason: "Clubs have no gallery any more. Always [].")
   user: User!
   members: [ClubMember!]!
   createdAt: String!
@@ -284,7 +309,11 @@ type PaymentIntent {
   clientSecret: String
 }
 
-"""A view that pairs each Club with its CLUB user."""
+"""
+A view that pairs each Club with its CLUB account. The club IS the account, so
+the "admin" fields describe the same user: adminName is the person in
+Club.managedBy and adminAvatar is the club crest.
+"""
 type ClubAdminView {
   clubId: ID!
   clubName: String!
@@ -504,7 +533,10 @@ type Query {
   me: User
   """Public, rate limited (10/min). Normalizes input; errors with VALIDATION_ERROR if the format is invalid."""
   isEmailAvailable(email: String!): Boolean!
-  """Public, rate limited (10/min). Case-insensitive."""
+  """
+  Public, rate limited (10/min). Case-insensitive. With a session, the caller's
+  own username counts as available (the profile form validates it on edit).
+  """
   isUsernameAvailable(username: String!): Boolean!
   players(limit: Int, offset: Int): [User!]!
   coaches(limit: Int, offset: Int): [User!]!
@@ -601,6 +633,8 @@ type Mutation {
   # Auth
   register(
     email: String!
+    # For role CLUB this argument is IGNORED (but still required by the schema):
+    # the account name is clubName. Send any non-empty value.
     name: String!
     username: String
     password: String!
@@ -617,7 +651,10 @@ type Mutation {
     # Strict YYYY-MM-DD (UTC), between 16 and 100 years old as of today. Errors:
     # DATE_OF_BIRTH_INVALID | DATE_OF_BIRTH_TOO_YOUNG | DATE_OF_BIRTH_TOO_OLD
     dateOfBirth: String
+    # Role CLUB only (required): becomes User.name. Unique ignoring case, accents
+    # and extra spaces: 409 CLUB_NAME_TAKEN, field clubName.
     clubName: String
+    # Role CLUB only (required): the person who manages the club (Club.managedBy).
     managedByFirstName: String
     managedByLastName: String
   ): User!
@@ -631,6 +668,8 @@ type Mutation {
   deleteCV(userId: ID!): Boolean!
   updateUser(
     id: ID!
+    # For a CLUB account this is the club name: same rule as updateClub
+    # (409 CLUB_NAME_TAKEN, field name; city and country cannot be cleared).
     name: String
     username: String
     bio: String
@@ -692,7 +731,12 @@ type Mutation {
   ): DocumentUploadSignature!
 
   # Clubs
-  """Creates the club profile for the authenticated user (must have role CLUB)."""
+  """
+  Creates the club profile for the authenticated user (must have role CLUB) and
+  writes name, city and country on that user. Register already does this for new
+  clubs; use it only for a CLUB account that has no club profile yet.
+  409 CLUB_NAME_TAKEN, field name.
+  """
   createClub(
     name: String!
     city: String!
@@ -722,9 +766,18 @@ type Mutation {
   ): ClubMember!
   """Only the invited user can accept a pending invitation."""
   acceptMembership(membershipId: String!): ClubMember!
+  """
+  Club owner or super admin only. Identity fields (name, username, bio, logo,
+  coverImage, coverImagePosition, city, country) are written on the owner User
+  and the club fields on Club, in ONE transaction. Errors: 409 CLUB_NAME_TAKEN
+  (field name), 409 USERNAME_TAKEN, 400 IMAGE_URL_INVALID (field logo or
+  coverImage), 400 COUNTRY_INVALID. null city/country keeps the stored value; a
+  blank one is a 400. 404 when the id is not a CLUB account.
+  """
   updateClub(
     id: ID!
     name: String
+    username: String
     managedByFirstName: String
     managedByLastName: String
     description: String
@@ -740,10 +793,14 @@ type Mutation {
     facebook: String
     tiktok: String
     benefits: [String!]
-    videos: [String!]
-    """Only urls uploaded to this club's folder, the current value, or null/"" to remove."""
+    videos: [String!] @deprecated(reason: "Ignored: clubs have no gallery any more.")
+    """
+    Stored as the owner User.avatar. Only urls uploaded to this club's folders
+    (stick-transfer/clubs/{id} or stick-transfer/users/{id}), the current value,
+    or null/"" to remove.
+    """
     logo: String
-    """Only urls uploaded to this club's folder, the current value, or null/"" to remove."""
+    """Same rule as logo; stored as the owner User.coverImage."""
     coverImage: String
     city: String
     country: String

@@ -14,8 +14,14 @@ model User {
   /// Nullable: OAuth users (Google, Apple) do not have a password.
   /// SECURITY: Always check authProvider before assuming a password exists.
   password           String?
+  /// For role CLUB this is the CLUB name (the club account IS the club).
   name               String
+  /// Uniqueness key of the club name. Filled by the DB trigger
+  /// user_set_club_name_key() (function club_name_key()), never by the app:
+  /// non-null only for role CLUB. TS twin: normalizeClubNameKey (src/clubs/club-name.ts).
+  clubNameKey        String?             @unique
   username           String?             @unique
+  /// For role CLUB this is the club crest (formerly Club.logo).
   avatar             String?
   coverImage         String?
   coverImagePosition String?             @default("50%")
@@ -106,20 +112,16 @@ model User {
   @@index([country, city])
   @@index([role, country, city, position])
   @@index([role, licenseLevel])
+  @@index([role, name])
 }
 
-/// A Club is the club profile of a single User with role CLUB.
-/// Club.id == User.id (1:1 identity relation) — there is no separate admin user.
+/// Club-only data of a User with role CLUB. Club.id == User.id (1:1).
+/// IDENTITY lives on User: name, avatar (crest), coverImage(+Position), bio,
+/// city, country. The GraphQL type Club exposes them as resolved fields.
 model Club {
   id                 String             @id
-  name               String             @unique
-  logo               String?
-  coverImage         String?
-  coverImagePosition String?            @default("50%")
   description        String?
-  bio                String?
-  city               String
-  country            String
+  /// PRIVACY: only the owner and SUPERADMIN read these (see clubs.resolver).
   managedByFirstName String
   managedByLastName  String
   league             String?
@@ -135,7 +137,6 @@ model Club {
   verificationStatus VerificationStatus @default(UNVERIFIED)
   verificationDoc    String?
   benefits           String[]           @default([])
-  videos             String[]           @default([])
 
   /// The User (role CLUB) this club profile belongs to. Same id as the user.
   user User @relation("ClubProfile", fields: [id], references: [id], onDelete: Cascade)
@@ -152,8 +153,6 @@ model Club {
 
   followers Follow[] @relation("FollowedClub")
 
-  @@index([name])
-  @@index([country, city])
   @@index([league])
 }
 

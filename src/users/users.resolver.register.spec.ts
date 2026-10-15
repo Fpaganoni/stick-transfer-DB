@@ -16,6 +16,7 @@ describe("UsersResolver - register/login/availability", () => {
     };
     authService = {
       validateUser: jest.fn(),
+      getUserFromRequest: jest.fn().mockReturnValue(null),
       login: jest.fn().mockResolvedValue({ access_token: "t" }),
       setAuthCookie: jest.fn(),
     };
@@ -192,14 +193,17 @@ describe("UsersResolver - register/login/availability", () => {
       expect(usersService.createUser).not.toHaveBeenCalled();
     });
 
-    it("creates a CLUB's club profile with the normalized code", async () => {
-      const clubsService = { create: jest.fn().mockResolvedValue({}) };
+    it("creates a CLUB's account with the normalized code", async () => {
+      const clubsService = {
+        assertClubNameAvailable: jest.fn().mockResolvedValue(undefined),
+        notifyPendingVerification: jest.fn().mockResolvedValue(undefined),
+      };
       resolver = new UsersResolver(
         usersService, authService, {} as any, {} as any, clubsService as any, {} as any,
       );
       await registerWith("CLUB", "gb-eng", true);
-      expect(clubsService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ country: "GB-ENG" }),
+      expect(usersService.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ country: "GB-ENG", role: "CLUB" }),
       );
     });
   });
@@ -223,9 +227,9 @@ describe("UsersResolver - register/login/availability", () => {
     });
 
     it("isUsernameAvailable validates format and reports availability", async () => {
-      expect((await codeOf(resolver.isUsernameAvailable("a"))).code).toBe("VALIDATION_ERROR");
-      expect(await resolver.isUsernameAvailable("Free_One")).toBe(true);
-      expect(usersService.isUsernameTaken).toHaveBeenCalledWith("free_one");
+      expect((await codeOf(resolver.isUsernameAvailable(ctx, "a"))).code).toBe("VALIDATION_ERROR");
+      expect(await resolver.isUsernameAvailable(ctx, "Free_One")).toBe(true);
+      expect(usersService.isUsernameTaken).toHaveBeenCalledWith("free_one", undefined);
     });
   });
 });

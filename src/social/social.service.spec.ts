@@ -21,9 +21,10 @@ const users: Record<string, any> = {
   "club-no-logo": { id: "club-no-logo", name: "No Logo", username: "nologo", avatar: "nologo-user.png" },
 };
 
+// Club rows that exist (the crest is the owner's avatar, never read from here).
 const clubs: Record<string, any> = {
-  club: { id: "club", logo: "club-logo.png" },
-  "club-no-logo": { id: "club-no-logo", logo: null },
+  club: { id: "club" },
+  "club-no-logo": { id: "club-no-logo" },
 };
 
 /**
@@ -42,12 +43,10 @@ function createFollowStore() {
     const follower = users[row.followerId];
     return {
       ...row,
-      followerUser: follower
-        ? { ...follower, clubProfile: clubs[row.followerId] ? { logo: clubs[row.followerId].logo } : null }
-        : null,
+      followerUser: follower ?? null,
       followedUser: row.followingUserId ? users[row.followingUserId] : null,
       followedClub: row.followingClubId
-        ? { logo: clubs[row.followingClubId].logo, user: users[row.followingClubId] }
+        ? { user: users[row.followingClubId] }
         : null,
     };
   };
@@ -90,7 +89,7 @@ describe("SocialService - follows", () => {
   });
 
   describe("getFollowing", () => {
-    it("lists a followed user and a followed club, matching followingCount", async () => {
+    it("lists a followed user and a followed club (avatar = owner avatar), matching followingCount", async () => {
       await service.follow("me", "USER", "me", "USER", "player");
       await service.follow("me", "USER", "me", "CLUB", "club");
 
@@ -101,12 +100,12 @@ describe("SocialService - follows", () => {
       expect(following).toHaveLength(2);
       // Newest first: the club was followed last.
       expect(following).toEqual([
-        { id: "club", name: "Club FC", username: "clubfc", avatar: "club-logo.png" },
+        { id: "club", name: "Club FC", username: "clubfc", avatar: "club-user.png" },
         { id: "player", name: "Player", username: "player", avatar: "player.png" },
       ]);
     });
 
-    it("falls back to the club owner's avatar when the club has no logo", async () => {
+    it("reads a followed club's crest from its owner user", async () => {
       await service.follow("me", "USER", "me", "CLUB", "club-no-logo");
 
       const [entry] = await service.getFollowing("USER", "me");
@@ -132,7 +131,6 @@ describe("SocialService - follows", () => {
           followedUser: { select: { id: true, name: true, username: true, avatar: true } },
           followedClub: {
             select: {
-              logo: true,
               user: { select: { id: true, name: true, username: true, avatar: true } },
             },
           },
@@ -164,7 +162,7 @@ describe("SocialService - follows", () => {
   });
 
   describe("getFollowers", () => {
-    it("lists user and club followers, using the club logo for clubs", async () => {
+    it("lists user and club followers, using the owner avatar for clubs", async () => {
       await service.follow("me", "USER", "me", "USER", "player");
       await service.follow("club", "CLUB", "club", "USER", "player");
 
@@ -173,12 +171,12 @@ describe("SocialService - follows", () => {
 
       expect(count).toBe(2);
       expect(followers).toEqual([
-        { id: "club", name: "Club FC", username: "clubfc", avatar: "club-logo.png" },
+        { id: "club", name: "Club FC", username: "clubfc", avatar: "club-user.png" },
         { id: "me", name: "Me", username: "me", avatar: "me.png" },
       ]);
     });
 
-    it("falls back to the user avatar for a club follower without logo", async () => {
+    it("reads a club follower's crest from its user avatar", async () => {
       await service.follow("club-no-logo", "CLUB", "club-no-logo", "USER", "player");
 
       const [entry] = await service.getFollowers("USER", "player");
@@ -197,13 +195,7 @@ describe("SocialService - follows", () => {
         take: 10,
         include: {
           followerUser: {
-            select: {
-              id: true,
-              name: true,
-              username: true,
-              avatar: true,
-              clubProfile: { select: { logo: true } },
-            },
+            select: { id: true, name: true, username: true, avatar: true },
           },
         },
       });

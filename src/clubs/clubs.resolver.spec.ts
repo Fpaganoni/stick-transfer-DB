@@ -21,6 +21,7 @@ describe("ClubsResolver - authorization", () => {
       setLogo: jest.fn(),
       setCoverImage: jest.fn(),
       requestVerification: jest.fn(),
+      resetLoaders: jest.fn(),
     };
     notifications = { sendNotification: jest.fn() };
     cloudinary = {

@@ -33,15 +33,15 @@ const FOLLOW_ORDER: Prisma.FollowOrderByWithRelationInput[] = [
 ];
 
 /**
- * A club is listed as the User that owns it (same id), showing the club logo
- * as avatar when it has one.
+ * A club is listed as the User that owns it (same id): its name is User.name
+ * and its crest is User.avatar, so no club-specific lookup is needed.
  */
-function toBasicInfo(user: UserBasicInfo, clubLogo?: string | null): UserBasicInfo {
+function toBasicInfo(user: UserBasicInfo): UserBasicInfo {
   return {
     id: user.id,
     name: user.name,
     username: user.username,
-    avatar: clubLogo ?? user.avatar,
+    avatar: user.avatar,
   };
 }
 
@@ -157,17 +157,9 @@ export class SocialService {
       orderBy: FOLLOW_ORDER,
       skip,
       take,
-      include: {
-        followerUser: {
-          select: { ...USER_BASIC_SELECT, clubProfile: { select: { logo: true } } },
-        },
-      },
+      include: { followerUser: { select: USER_BASIC_SELECT } },
     });
-    return follows.flatMap(({ followerType, followerUser }) => {
-      if (!followerUser) return [];
-      const clubLogo = followerType === "CLUB" ? followerUser.clubProfile?.logo : null;
-      return [toBasicInfo(followerUser, clubLogo)];
-    });
+    return follows.flatMap(({ followerUser }) => (followerUser ? [toBasicInfo(followerUser)] : []));
   }
 
   /**
@@ -187,11 +179,11 @@ export class SocialService {
       take,
       include: {
         followedUser: { select: USER_BASIC_SELECT },
-        followedClub: { select: { logo: true, user: { select: USER_BASIC_SELECT } } },
+        followedClub: { select: { user: { select: USER_BASIC_SELECT } } },
       },
     });
     return follows.flatMap(({ followedUser, followedClub }) => {
-      if (followedClub) return [toBasicInfo(followedClub.user, followedClub.logo)];
+      if (followedClub) return [toBasicInfo(followedClub.user)];
       return followedUser ? [toBasicInfo(followedUser)] : [];
     });
   }

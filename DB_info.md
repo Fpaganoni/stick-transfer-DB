@@ -1,7 +1,8 @@
 # DB_info
 
-## Paises (`User.country`, `Club.country`, `JobOpportunity.country`)
+## Paises (`User.country`, `JobOpportunity.country`)
 
+`Club.country` ya no es una columna: el pais de un club es el `User.country` de su cuenta (ver "Identidad de club").
 Se guardan como codigo ISO 3166-1 alfa-2 en mayuscula (`"AR"`, `"ES"`, `"NL"`), mas `GB-ENG`, `GB-SCT` y `GB-WLS`
 (Inglaterra, Escocia y Gales juegan por separado). Lista cerrada en `src/common/geo/countries.ts` (`COUNTRY_CODES`).
 El front muestra el nombre a partir del codigo (por ejemplo `Intl.DisplayNames`).
@@ -106,10 +107,12 @@ No existe `adminJobOpportunities`. `jobOpportunities(filters: {positionType: "UM
 para listar. `adminDashboardStats` suma `umpireJobsCount` y `umpireApplicationsCount`.
 
 ### Seed (`pnpm prisma:seed`)
-4 jobs UMPIRE (OPEN) en clubs[0] Madrid (NACIONAL/OUTDOOR/MASCULINO), clubs[1] Barcelona (REGIONAL/INDOOR/JUVENIL),
-clubs[5] Buenos Aires (INTERNACIONAL/OUTDOOR/FEMENINO), clubs[10] Rotterdam (REGIONAL/INDOOR/VETERANOS).
+6 jobs UMPIRE (OPEN) en clubs[0] Madrid (NACIONAL/OUTDOOR/MASCULINO), clubs[1] Barcelona (REGIONAL/INDOOR/JUVENIL),
+clubs[5] Buenos Aires (INTERNACIONAL/OUTDOOR/FEMENINO), clubs[10] Rotterdam (REGIONAL/INDOOR/VETERANOS),
+clubs[3] Terrassa (REGIONAL/OUTDOOR/FEMENINO) y clubs[6] Buenos Aires (NACIONAL/OUTDOOR/MAYORES).
 Paises del seed: `ES`, `AR`, `NL`.
-1 application de `umpire_garcia` al job de Madrid. Los ids son uuid generados en cada seed.
+`umpire_garcia` tiene 4 postulaciones (PENDING, UNDER_REVIEW, ACCEPTED, REJECTED) sobre los 4 primeros y guardo los 2
+ultimos. Los ids son uuid generados en cada seed. Ver "Cuentas de prueba por rol".
 
 ## Empleos guardados y postulaciones
 
@@ -186,7 +189,10 @@ path). En produccion el logout emite `Set-Cookie: st_session=; Path=/; Expires=1
 
 ## Imagenes de perfil (avatar, cover, escudo)
 
-Columnas: `User.avatar`, `User.coverImage`, `Club.logo`, `Club.coverImage` (String?). `Club.id` = `User.id` del dueno.
+Columnas: `User.avatar` y `User.coverImage` (String?). Para un CLUB el escudo es `User.avatar` y la portada
+`User.coverImage` (`Club.logo` / `Club.coverImage` son campos GraphQL que leen esas columnas). `Club.id` = `User.id`.
+Para un CLUB valen las URLs de `stick-transfer/users/{id}` Y de `stick-transfer/clubs/{id}` (mismo id): los targets
+`USER_AVATAR`/`USER_COVER` y `CLUB_LOGO`/`CLUB_COVER` sirven los dos.
 
 ### Subida firmada directa a Cloudinary
 1. `createImageUploadSignature(target: ImageUploadTarget!, clubId: ID)` (requiere sesion, 20/min). Targets: `USER_AVATAR`, `USER_COVER`, `CLUB_LOGO`, `CLUB_COVER`.
@@ -209,3 +215,127 @@ ser un codigo, ver "Paises").
 ### Limitaciones conocidas
 - Un SUPERADMIN no puede firmar subidas de avatar/cover de otro usuario (solo de clubes via `clubId`).
 - Los valores legacy ya guardados se siguen aceptando si el form los reenvia sin cambios.
+
+## Identidad de club
+
+La cuenta del club ES el club. La identidad vive en `User` (rol CLUB): `name` = nombre del club, `avatar` = escudo,
+`coverImage`/`coverImagePosition` = portada, `bio` = bio corta, `city`/`country` = sede. `Club` (mismo id) conserva solo:
+`description`, `league`, `foundedYear`, `email`, `phone`, `website`, `instagram`, `twitter`, `facebook`, `tiktok`,
+`benefits`, `isVerified`, `verificationStatus`, `verificationDoc`, `managedByFirstName`, `managedByLastName`.
+`Club.email` es el contacto publico del club; `User.email` es el login (privado).
+
+- **Nombre unico**: `User.clubNameKey` (`@unique`, NULL fuera de CLUB). Lo calcula SOLO la DB: funcion IMMUTABLE
+  `club_name_key(text)` + trigger `User_club_name_key_trg` (BEFORE INSERT/UPDATE OF name, role). Algoritmo: NFKC, NFD, quitar
+  U+0300-U+036F, minusculas, colapsar espacios (incluye NBSP), trim. `normalizeClubNameKey` (`src/clubs/club-name.ts`)
+  es el gemelo en TS solo para el pre-check; si discrepan manda el indice (P2002 -> `CLUB_NAME_TAKEN`). Los nombres de
+  persona NO son unicos (Google sign-up crea usuarios con `displayName`). Se descarto `unaccent` (STABLE, y trata
+  ø/ß distinto que JS).
+- `CHECK User_club_location_check`: un CLUB siempre tiene `city` y `country` (por eso `Club.city/country` son `String!`).
+- `clubs` y `exploreClubs` solo listan cuentas con `isActive = true` Y rol CLUB. `adminChangeUserRole` rechaza (400)
+  pasar a o desde CLUB: un cambio de rol suelto no puede crear ni desarmar la fila `Club`, la clave de nombre ni la ubicacion.
+- Nombres (club y `managedBy*`): maximo 100 caracteres y sin caracteres de control ni invisibles (`NAME_INVALID`).
+- Los campos de persona (`dateOfBirth`, `level`, `yearsOfExperience`, `clubId`, `cvUrl`, `multimedia`) se limpian para los CLUB
+  en la migracion; `updateUser` no los bloquea (pendiente si se quiere).
+
+### Migracion de identidad (2 pasos, pensada para una DB con datos)
+1. `20261014140000_club_identity_expand`: crea `club_name_key`, **preflight** (aborta con la lista de ids si hay: CLUB sin fila
+   Club, Club cuyo usuario no es CLUB, `Club.country` sin normalizar, nombre/ciudad en blanco, o nombres que chocan ignorando
+   mayusculas/acentos/espacios), **respaldo** en `backup.club_identity_20261014` (schema aparte: Prisma no lo ve), agrega
+   `clubNameKey` + trigger, copia la identidad SOLO para `role = 'CLUB'` (`Club.logo` -> `avatar` aunque sea NULL; portada, posicion
+   y bio SOLO del club, nunca se rellenan con los de la persona), limpia los campos de persona, crea el indice unico, el CHECK
+   y `User(role, name)`. Aditiva: no borra nada de `Club`.
+2. `20261014140100_club_identity_contract`: dropea de `Club` `name`, `logo`, `coverImage`, `coverImagePosition`, `bio`, `city`,
+   `country`, `videos` y sus indices/CHECK.
+- **Despliegue (importante)**: `prisma migrate deploy` aplica TODAS las migraciones pendientes juntas, asi que los dos
+  pasos corren uno tras otro. El codigo viejo no funciona con ninguno de los dos (el paso 1 agrega el CHECK de
+  ubicacion, el indice unico y el trigger; el paso 2 borra columnas que el codigo viejo lee). Por eso: aplicar con una
+  **ventana de mantenimiento** (escrituras detenidas, deploy del codigo nuevo en la misma ventana), o publicar el archivo
+  del paso 2 en un release posterior. Usar la conexion directa (puerto 5432), no el pooler (pgbouncer). Ambos archivos
+  empiezan con `SET LOCAL lock_timeout = '5s'`: si la tabla esta ocupada fallan rapido en vez de bloquear lecturas; reintentar
+  (si queda en estado fallido, `prisma migrate resolve --rolled-back <nombre>`). El paso 1 toma un lock exclusivo sobre
+  `"User"` hasta el commit (ADD COLUMN, UPDATE, indices): rapido con pocos miles de filas; con muchas, medir antes.
+- Si el preflight aborta: la transaccion de Prisma revierte todo; corregir los datos y reintentar.
+- El nombre de la persona que administraba un club con `managedBy = 'Sin definir'` (club viejo) se copia a `managedBy` ANTES
+  de que `User.name` pase a ser el nombre del club.
+- `club_name_key` aplica NFKC + NFD: formas de compatibilidad (`Ｒeal`, `①`, ligaduras) colisionan con su version normal.
+  No cubre homoglifos de otro alfabeto (cirilico `а` vs latino `a`): `isVerified` es la mitigacion visible para los usuarios.
+  `lower()` depende de la collation de la base (en `C` solo ASCII); tras NFD la parte latina queda ASCII, pero una
+  restauracion en una base con otra collation podria cambiar las claves. Los nombres de club no admiten caracteres de
+  control ni invisibles (`NAME_INVALID`).
+- **Rollback** (antes del paso 2). Las ediciones hechas en `Club` despues del paso 1 estan en `User` y se pierden.
+  Secuencia completa (el `UPDATE` vuelve a disparar el trigger y los CHECK, por eso se sueltan primero):
+  1. `DROP TRIGGER "User_club_name_key_trg" ON "User"; DROP INDEX "User_clubNameKey_key"; DROP INDEX "User_role_name_idx"; ALTER TABLE "User" DROP CONSTRAINT "User_club_location_check";`
+  2. `UPDATE "User" u SET name=b.user_name, avatar=b.user_avatar, "coverImage"=b.user_cover_image, "coverImagePosition"=b.user_cover_position, bio=b.user_bio, city=b.user_city, country=b.user_country, "dateOfBirth"=b.user_date_of_birth, level=b.user_level, "yearsOfExperience"=b.user_years_of_experience, "clubId"=b.user_club_id, "cvUrl"=b.user_cv_url, multimedia=b.user_multimedia FROM backup.club_identity_20261014 b WHERE b.id=u.id;` (un `dateOfBirth` anterior a 1900 falla el CHECK NOT VALID: poner `NULL`).
+  3. `ALTER TABLE "User" DROP COLUMN "clubNameKey"; DROP FUNCTION user_set_club_name_key(); DROP FUNCTION club_name_key(text);`
+  Despues del paso 2 hay que restaurar `Club` desde el respaldo (`club_*`) o desde un backup/PITR: tomar un `pg_dump`
+  antes de aplicar en produccion.
+- **Respaldo = datos personales** (fecha de nacimiento, CV, multimedia de los administradores): el schema `backup` queda
+  cerrado (`REVOKE` a PUBLIC/anon/authenticated y RLS sin politicas). Una vez verificado el paso 1, vaciar lo personal
+  (`UPDATE backup.club_identity_20261014 SET user_date_of_birth=NULL, user_cv_url=NULL, user_multimedia=NULL, user_level=NULL, user_years_of_experience=NULL;`)
+  y borrar el schema en 30 dias como maximo: `DROP SCHEMA backup CASCADE;`. Los `pg_dump`/PITR existentes conservan esos datos.
+- Verificado en una DB local descartable: 42 migraciones desde cero, `prisma migrate diff` sin diferencias, y una prueba con
+  datos (identidad copiada, trigger, indice unico, CHECK, paridad SQL/TS, los 4 abortos del preflight).
+
+## Cuentas de prueba por rol (`pnpm prisma:seed`)
+
+Solo el email; la contrasena de desarrollo esta en `prisma/seed.ts`. Cada cuenta de prueba tiene datos para probar
+"Mis postulaciones", empleos guardados y los contadores de follows.
+
+| Rol | Email | Que tiene |
+|-----|-------|-----------|
+| PLAYER | `lucia@hockey-test.com` (`lucia_jimenez`) | 4 postulaciones (PENDING, UNDER_REVIEW, ACCEPTED, REJECTED), 3 guardados, sigue a 3 usuarios y 3 clubes, tiene seguidores |
+| COACH | `coach.martinez@hockey-test.com` | 4 postulaciones (3 COACH + 1 STAFF, estados distintos), 3 guardados, sigue a 3 usuarios y 2 clubes |
+| UMPIRE | `umpire.garcia@hockey-test.com` | 4 postulaciones (estados distintos), 2 guardados, sigue a 2 usuarios y 3 clubes |
+| CLUB | `admin.campomadrid@hockey-test.com` (`ccvillamadrid`) | Club verificado; sigue a `lucia_jimenez` como CLUB |
+| CLUB sin verificar | `admin.italiano@hockey-test.com` (`clubitaliano`) | Para probar la verificacion |
+| SUPERADMIN | `superadmin@hockey-test.com` | Panel admin |
+
+Los 12 clubes: usuario = slug corto (`ccvillamadrid`, `rcpolobarcelona`, `realclubpolo`, `cdterrassa`, `atleticterrassa`,
+`casanisidro`, `belgranoac`, `gimnasiaesgrima`, `clubitaliano`, `lomasathletic`, `hcrotterdam`, `amsterdamhc`), `name` = nombre
+del club, `avatar` = logo, portada y bio del club, `managedBy` = la persona que antes estaba en `name`. El seed hace un HEAD a
+cada logo/portada: lo que no responde 200 se guarda como `null` y se lista al final (`broken image URLs`); sin red conserva la
+URL y avisa. Ultima corrida: 0 rotas (las 4 portadas de unsplash que daban 404 se cambiaron por otras ya verificadas). Termina
+con un assert: falla si dos clubes comparten `clubNameKey` o si algun CLUB no tiene clave.
+
+## Contrato para el FRONT (fase 2)
+
+**Lo que cambio**
+- `User` de rol CLUB: `name` es el nombre del CLUB y `avatar` el escudo (ya no la persona ni una foto de randomuser). La
+  persona que administra esta en `User.clubProfile.managedBy` (privado).
+- **Nuevo** `User.clubProfile: Club` (null si no es CLUB). `me` y `getUserByUsername` traen identidad + datos del club en un
+  solo request. Se resuelve por lote (sin N+1).
+- `Club.name`, `logo`, `coverImage`, `coverImagePosition`, `bio`, `city`, `country`: misma forma que antes, ahora leidos del
+  `User` duenio. `Club.logo` es `User.avatar`. `Club.user` siempre resuelve.
+- `Club.managedBy` pasa a **nullable**: solo lo ven el propio club y SUPERADMIN (los demas reciben `null`). Regenerar los tipos.
+- `ClubAdminView.adminName` es ahora el nombre de `managedBy`; `adminAvatar` es el escudo del club.
+- `clubs` y `exploreClubs` ya no devuelven clubes de cuentas desactivadas (`isActive = false`). `availableCountries` sale solo
+  de `User`.
+- `isUsernameAvailable`: con sesion, el username propio devuelve `true` (validar al editar el perfil).
+
+**Mutations**
+- `register` (CLUB): el nombre de la cuenta es `clubName`; el argumento `name` se IGNORA (sigue siendo `String!`, mandar
+  cualquier valor no vacio). `managedByFirstName`/`managedByLastName` obligatorios. Los errores de nombre salen con
+  `field: "clubName"`. Usuario y club se crean juntos.
+- `updateClub`: acepta identidad (`name`, `username`, `bio`, `logo`, `coverImage`, `coverImagePosition`, `city`, `country`) +
+  datos de club, en una sola transaccion. `city`/`country` en `null` = sin cambio; en blanco = 400. Un id que no es un
+  club -> 404. Para un CLUB valen las URLs de imagen de `users/{id}` y de `clubs/{id}`.
+- `updateUser` sobre un CLUB: `name` sigue la misma regla de nombre unico; `city`/`country` no se pueden borrar. `name` se valida
+  (vacio o > 100 caracteres -> `NAME_REQUIRED` / `NAME_TOO_LONG`) para todos los roles.
+- `createClub`: ahora tambien escribe `name`, `city` y `country` en el usuario. `register` ya lo hace; solo sirve para una
+  cuenta CLUB sin fila de club.
+
+**Deprecated**
+- `Club.videos` (siempre `[]`) y el argumento `updateClub(videos:)` (ignorado). Quitarlos del front.
+- `uploadAvatar`, `uploadCoverImage`, `uploadClubLogo`, `uploadClubCoverImage` (ya lo estaban).
+
+**Errores nuevos y relevantes**
+- `CLUB_NAME_TAKEN`: HTTP 409, `extensions.code`, `field: "name"` (`updateClub`, `updateUser`, `createClub`) o `"clubName"`
+  (`register`). Compara ignorando mayusculas, acentos y espacios repetidos.
+- `NAME_INVALID` (400, `VALIDATION_ERROR`, `field: "name" | "clubName" | "managedByFirstName" | "managedByLastName"`): el
+  nombre trae caracteres de control o invisibles. `NAME_TOO_LONG` tambien aplica a `managedBy*` (maximo 100).
+- `adminChangeUserRole` a o desde CLUB -> 400 `Roles cannot be changed to or from CLUB`.
+- Ya existentes que ahora tambien salen de `updateClub`: `USERNAME_TAKEN` (409, `field: "username"`), `IMAGE_URL_INVALID`
+  (`field: "logo" | "coverImage"`), `COUNTRY_INVALID`, `FIELD_REQUIRED` (`field: "city"`).
+
+**Limitacion conocida**: un club sigue teniendo dos ejes de follow/reporte (`USER` y `CLUB`, mismo id). `Club.followersCount`
+cuenta follows de tipo CLUB y `User.followersCount` los de tipo USER; usar `follow(followingType: CLUB)` para seguir a un club.

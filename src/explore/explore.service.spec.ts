@@ -157,12 +157,12 @@ describe("ExploreService", () => {
   });
 
   describe("getExploreClubs", () => {
-    it("filters by country code case-insensitively: 'es' finds 'ES'", async () => {
+    it("filters by country code case-insensitively on the owner user: 'es' finds 'ES'", async () => {
       prisma.club.findMany.mockResolvedValue([]);
 
       await service.getExploreClubs({ country: "es" });
 
-      expect(prisma.club.findMany.mock.calls[0][0].where.country).toEqual({ in: ["ES"] });
+      expect(prisma.club.findMany.mock.calls[0][0].where.user.country).toEqual({ in: ["ES"] });
     });
 
     it("an unknown country filter matches nothing", async () => {
@@ -170,7 +170,57 @@ describe("ExploreService", () => {
 
       await service.getExploreClubs({ country: "España" });
 
-      expect(prisma.club.findMany.mock.calls[0][0].where.country).toEqual({ in: [] });
+      expect(prisma.club.findMany.mock.calls[0][0].where.user.country).toEqual({ in: [] });
+    });
+
+    it("only lists clubs whose owner account is active and joins the owner", async () => {
+      prisma.club.findMany.mockResolvedValue([]);
+
+      await service.getExploreClubs({});
+
+      const args = prisma.club.findMany.mock.calls[0][0];
+      expect(args.where.user.isActive).toBe(true);
+      expect(args.include).toEqual({ user: true });
+    });
+
+    it("searches the owner name, city and bio plus the club description", async () => {
+      prisma.club.findMany.mockResolvedValue([]);
+
+      await service.getExploreClubs({ search: "madrid" });
+
+      const contains = { contains: "madrid", mode: "insensitive" };
+      expect(prisma.club.findMany.mock.calls[0][0].where.OR).toEqual([
+        { user: { name: contains } },
+        { user: { city: contains } },
+        { description: contains },
+        { user: { bio: contains } },
+      ]);
+    });
+
+    it("keeps the league filter on the club row", async () => {
+      prisma.club.findMany.mockResolvedValue([]);
+
+      await service.getExploreClubs({ league: "Primera" });
+
+      const where = prisma.club.findMany.mock.calls[0][0].where;
+      expect(where.league).toBe("Primera");
+      expect(where.user.league).toBeUndefined();
+    });
+  });
+
+  describe("getAvailableCountries", () => {
+    it("reads only active users (clubs are users) and never queries the club table", async () => {
+      prisma.user.findMany.mockResolvedValue([{ country: "GB-ENG" }, { country: "ES" }]);
+
+      const countries = await service.getAvailableCountries();
+
+      expect(countries).toEqual(["ES", "GB-ENG"]);
+      expect(prisma.user.findMany).toHaveBeenCalledWith({
+        where: { country: { not: null }, isActive: true },
+        select: { country: true },
+        distinct: ["country"],
+      });
+      expect(prisma.club.findMany).not.toHaveBeenCalled();
     });
   });
 });
