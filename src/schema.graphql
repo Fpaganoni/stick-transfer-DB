@@ -216,6 +216,8 @@ type JobOpportunity {
   currency: String
   benefits: String
   status: String!
+  """When the job became FILLED (ISO 8601). A FILLED job can be deleted 14 days after this date."""
+  filledAt: String
   gender: Gender
   expiresAt: String
   division: String

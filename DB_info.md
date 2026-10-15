@@ -406,3 +406,31 @@ Una cuenta CLUB **es** el club: no es una persona y no tiene dos identidades soc
   programacion del front: no deberia verse.
 - Los campos `Follow.followerType`/`followingType` que devuelve `follow` ya vienen normalizados (`CLUB` para un club).
 - Notificaciones: un club recibe `NEW_FOLLOWER` cuando lo siguen.
+
+## Borrado de vacantes y `filledAt` (fase 4)
+
+Migracion `20261015130000_job_filled_at`: columna `JobOpportunity.filledAt` (`TIMESTAMP(3)`, nullable, aditiva). Las vacantes ya
+`FILLED` reciben `filledAt = updatedAt`. Se expone en el SDL como `JobOpportunity.filledAt: String` (ISO 8601). Falta aplicarla
+(`prisma migrate deploy`) en cada entorno.
+
+### Reglas
+- `updateJobOpportunity(id, status)` acepta solo `OPEN`, `CLOSED`, `FILLED` (sin importar mayusculas). Otro valor -> 400
+  `VALIDATION_ERROR` con `field: "status"` y `code: "JOB_STATUS_INVALID"`. `status` `null` u omitido = sin cambio.
+  - Pasar a `FILLED` guarda `filledAt = ahora`. Salir de `FILLED` lo deja en `null`. `FILLED` -> `FILLED` no lo reinicia.
+- `deleteJobOpportunity(id)` de un CLUB solo funciona si se cumple **una**:
+  1. Ninguna postulacion en `PENDING` ni `UNDER_REVIEW` (cero postulaciones tambien vale; `ACCEPTED`, `REJECTED` y `WITHDRAWN`
+     cuentan como respondidas), o
+  2. la vacante esta `FILLED` y `filledAt` tiene 14 dias o mas.
+- SUPERADMIN borra sin estas reglas (moderacion).
+- La regla va tambien dentro del `DELETE` (una sola sentencia), asi que una postulacion que llega entre la comprobacion y el
+  borrado no se pierde.
+
+### Errores nuevos (`extensions.code`, HTTP 409, sin `field`)
+| Code | Cuando |
+|------|--------|
+| `JOB_HAS_UNANSWERED_APPLICATIONS` | Hay postulaciones `PENDING`/`UNDER_REVIEW` y la vacante no cumple el plazo de `FILLED` |
+| `JOB_FILLED_COOLDOWN` | La vacante esta `FILLED` hace menos de 14 dias y tiene postulaciones sin responder; el mensaje trae la fecha ISO desde la que se puede borrar |
+
+### Para el FRONT
+- Calcular `canDelete` con la misma regla (`lib/job-deletion-rules.ts`) usando `status`, `filledAt` y el conteo de postulaciones
+  sin responder; el back es la fuente de verdad: igual hay que mapear los dos codes a un mensaje.

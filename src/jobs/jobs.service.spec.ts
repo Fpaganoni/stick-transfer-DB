@@ -21,9 +21,11 @@ const mockPrismaService = {
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+    deleteMany: jest.fn(),
     count: jest.fn(),
   },
   jobApplication: {
+    count: jest.fn(),
     create: jest.fn(),
     findMany: jest.fn(),
     findUnique: jest.fn(),
@@ -269,35 +271,89 @@ describe("JobsService", () => {
 
   // ── delete ────────────────────────────────────────────────────────────────
   describe("delete", () => {
-    it("should delete job and return true when actor owns the club", async () => {
-      prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1" });
-      prisma.jobOpportunity.delete.mockResolvedValue({});
-      const result = await service.delete("job-1", { userId: "club-1", role: "CLUB" });
-      expect(prisma.jobOpportunity.delete).toHaveBeenCalledWith({ where: { id: "job-1" } });
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const club = { userId: "club-1", role: "CLUB" };
+    const openJob = { id: "job-1", clubId: "club-1", status: "OPEN", filledAt: null };
+
+    it("should delete job and return true when every application is answered", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue(openJob);
+      prisma.jobApplication.count.mockResolvedValue(0);
+      prisma.jobOpportunity.deleteMany.mockResolvedValue({ count: 1 });
+      const result = await service.delete("job-1", club);
+      expect(prisma.jobApplication.count).toHaveBeenCalledWith({
+        where: { jobOpportunityId: "job-1", status: { in: ["PENDING", "UNDER_REVIEW"] } },
+      });
+      expect(prisma.jobOpportunity.deleteMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ id: "job-1" }) }),
+      );
       expect(result).toBe(true);
     });
 
     it("should reject when actor does not own the job", async () => {
-      prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1" });
+      prisma.jobOpportunity.findUnique.mockResolvedValue(openJob);
       await expect(
         service.delete("job-1", { userId: "club-2", role: "CLUB" }),
       ).rejects.toThrow(ForbiddenException);
-      expect(prisma.jobOpportunity.delete).not.toHaveBeenCalled();
-    });
-
-    it("should allow a super admin", async () => {
-      prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1" });
-      prisma.jobOpportunity.delete.mockResolvedValue({});
-      await expect(
-        service.delete("job-1", { userId: "admin", role: "SUPERADMIN" }),
-      ).resolves.toBe(true);
+      expect(prisma.jobOpportunity.deleteMany).not.toHaveBeenCalled();
     });
 
     it("should throw NotFound for a missing job", async () => {
       prisma.jobOpportunity.findUnique.mockResolvedValue(null);
+      await expect(service.delete("nope", club)).rejects.toThrow(NotFoundException);
+    });
+
+    it("should reject with JOB_HAS_UNANSWERED_APPLICATIONS when applications wait for an answer", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue(openJob);
+      prisma.jobApplication.count.mockResolvedValue(2);
+      await expect(service.delete("job-1", club)).rejects.toMatchObject({
+        code: "JOB_HAS_UNANSWERED_APPLICATIONS",
+        status: 409,
+      });
+      expect(prisma.jobOpportunity.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it("should reject with JOB_FILLED_COOLDOWN when filled less than 14 days ago", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue({
+        ...openJob,
+        status: "FILLED",
+        filledAt: new Date(Date.now() - 13 * DAY_MS),
+      });
+      prisma.jobApplication.count.mockResolvedValue(1);
+      await expect(service.delete("job-1", club)).rejects.toMatchObject({
+        code: "JOB_FILLED_COOLDOWN",
+        status: 409,
+      });
+      expect(prisma.jobOpportunity.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it("should delete a job filled 14 days ago even with unanswered applications", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue({
+        ...openJob,
+        status: "FILLED",
+        filledAt: new Date(Date.now() - 14 * DAY_MS - 1000),
+      });
+      prisma.jobApplication.count.mockResolvedValue(5);
+      prisma.jobOpportunity.deleteMany.mockResolvedValue({ count: 1 });
+      await expect(service.delete("job-1", club)).resolves.toBe(true);
+    });
+
+    it("should let a super admin delete for moderation without the club rules", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue(openJob);
+      prisma.jobOpportunity.delete.mockResolvedValue({});
       await expect(
-        service.delete("nope", { userId: "club-1", role: "CLUB" }),
-      ).rejects.toThrow(NotFoundException);
+        service.delete("job-1", { userId: "admin", role: "SUPERADMIN" }),
+      ).resolves.toBe(true);
+      expect(prisma.jobApplication.count).not.toHaveBeenCalled();
+      expect(prisma.jobOpportunity.delete).toHaveBeenCalledWith({ where: { id: "job-1" } });
+    });
+
+    it("should reject when an application arrives between the check and the delete", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue(openJob);
+      prisma.jobApplication.count.mockResolvedValue(0);
+      prisma.jobOpportunity.deleteMany.mockResolvedValue({ count: 0 });
+      await expect(service.delete("job-1", club)).rejects.toMatchObject({
+        code: "JOB_HAS_UNANSWERED_APPLICATIONS",
+      });
     });
   });
 
@@ -317,6 +373,41 @@ describe("JobsService", () => {
       await service.update("job-1", { status: "CLOSED" }, { userId: "club-1", role: "CLUB" });
       expect(prisma.jobOpportunity.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: "job-1" }, data: { status: "CLOSED" } }),
+      );
+    });
+
+    it("should reject a status outside OPEN, CLOSED and FILLED", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1", status: "OPEN" });
+      await expect(
+        service.update("job-1", { status: "ARCHIVED" }, { userId: "club-1", role: "CLUB" }),
+      ).rejects.toMatchObject({ code: "VALIDATION_ERROR", field: "status" });
+      expect(prisma.jobOpportunity.update).not.toHaveBeenCalled();
+    });
+
+    it("should set filledAt when the job becomes FILLED", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1", status: "OPEN", filledAt: null });
+      prisma.jobOpportunity.update.mockResolvedValue({});
+      await service.update("job-1", { status: "FILLED" }, { userId: "club-1", role: "CLUB" });
+      const { data } = prisma.jobOpportunity.update.mock.calls[0][0];
+      expect(data.status).toBe("FILLED");
+      expect(data.filledAt).toBeInstanceOf(Date);
+    });
+
+    it("should clear filledAt when a FILLED job is reopened", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1", status: "FILLED", filledAt: new Date() });
+      prisma.jobOpportunity.update.mockResolvedValue({});
+      await service.update("job-1", { status: "OPEN" }, { userId: "club-1", role: "CLUB" });
+      expect(prisma.jobOpportunity.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { status: "OPEN", filledAt: null } }),
+      );
+    });
+
+    it("should keep filledAt when a FILLED job is set to FILLED again", async () => {
+      prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1", status: "FILLED", filledAt: new Date() });
+      prisma.jobOpportunity.update.mockResolvedValue({});
+      await service.update("job-1", { status: "FILLED" }, { userId: "club-1", role: "CLUB" });
+      expect(prisma.jobOpportunity.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { status: "FILLED" } }),
       );
     });
   });

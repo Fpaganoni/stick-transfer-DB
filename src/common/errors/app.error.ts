@@ -9,6 +9,8 @@ export type AppErrorCode =
   | "EMAIL_TAKEN"
   | "USERNAME_TAKEN"
   | "CLUB_NAME_TAKEN"
+  | "JOB_HAS_UNANSWERED_APPLICATIONS"
+  | "JOB_FILLED_COOLDOWN"
   | "INVALID_CREDENTIALS"
   | "RATE_LIMITED"
   | "INTERNAL_ERROR";
@@ -70,6 +72,23 @@ export class AppError extends HttpException {
       "Club name not available",
       HttpStatus.CONFLICT,
       field,
+    );
+  }
+
+  static jobHasUnansweredApplications() {
+    return new AppError(
+      "JOB_HAS_UNANSWERED_APPLICATIONS",
+      "Answer every application before deleting this job opportunity",
+      HttpStatus.CONFLICT,
+    );
+  }
+
+  /** `availableAt` is when a FILLED job becomes deletable (ISO 8601). */
+  static jobFilledCooldown(availableAt: Date) {
+    return new AppError(
+      "JOB_FILLED_COOLDOWN",
+      `A filled job opportunity can be deleted from ${availableAt.toISOString()}`,
+      HttpStatus.CONFLICT,
     );
   }
 

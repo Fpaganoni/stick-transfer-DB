@@ -202,6 +202,8 @@ model JobOpportunity {
   currency     Currency?
   benefits     String?      @db.Text
   status       JobStatus    @default(OPEN)
+  // Set when the job becomes FILLED, cleared when it leaves FILLED. Starts the 14 day deletion cooldown.
+  filledAt     DateTime?
   gender       Gender?
   expiresAt    DateTime?
   division     String?

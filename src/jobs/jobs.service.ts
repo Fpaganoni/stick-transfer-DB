@@ -12,6 +12,15 @@ import { normalizePagination } from "../common/pagination";
 import { AppError } from "../common/errors/app.error";
 import { checkCloudinaryDocumentUrl, throwIfInvalid } from "../common/safe-url";
 import { checkCountry, countryFilter, normalizeCountry } from "../common/geo/countries";
+import {
+  FILLED_DELETE_COOLDOWN_DAYS,
+  JOB_STATUSES,
+  JobStatusValue,
+  UNANSWERED_APPLICATION_STATUSES,
+  evaluateJobDeletion,
+} from "./job-deletion-rules";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type JobActor = { userId: string; role: string };
 
@@ -50,12 +59,36 @@ export class JobsService {
   private async assertCanManageJob(jobOpportunityId: string, actor: JobActor) {
     const job = await this.prisma.jobOpportunity.findUnique({
       where: { id: jobOpportunityId },
-      select: { id: true, clubId: true },
+      select: { id: true, clubId: true, status: true, filledAt: true },
     });
     if (!job) throw new NotFoundException("Job opportunity not found");
     if (job.clubId !== actor.userId && actor.role !== "SUPERADMIN") {
       throw new ForbiddenException("You do not own this job opportunity");
     }
+    return job;
+  }
+
+  /** Case-insensitive; anything outside OPEN/CLOSED/FILLED is a field-level 400. */
+  private parseJobStatus(raw: string): JobStatusValue {
+    const value = String(raw).trim().toUpperCase();
+    if (!(JOB_STATUSES as readonly string[]).includes(value)) {
+      throw AppError.validation([
+        {
+          field: "status",
+          code: "JOB_STATUS_INVALID",
+          message: `status must be one of: ${JOB_STATUSES.join(", ")}`,
+        },
+      ]);
+    }
+    return value as JobStatusValue;
+  }
+
+  /** filledAt marks when the job became FILLED; it starts the deletion cooldown. */
+  private filledAtChange(current: string | undefined, next: JobStatusValue | undefined) {
+    if (!next || next === current) return {};
+    if (next === "FILLED") return { filledAt: new Date() };
+    if (current === "FILLED") return { filledAt: null };
+    return {};
   }
 
   /** Case-insensitive; invalid values become a 400 instead of a masked 500. */
@@ -237,12 +270,14 @@ export class JobsService {
     });
   }
 
-  async update(id: string, data: { status?: string }, actor: JobActor) {
-    await this.assertCanManageJob(id, actor);
+  async update(id: string, data: { status?: string | null }, actor: JobActor) {
+    const job = await this.assertCanManageJob(id, actor);
+    const status = data.status == null ? undefined : this.parseJobStatus(data.status);
     return this.prisma.jobOpportunity.update({
       where: { id },
       data: {
-        status: data.status as any,
+        status,
+        ...this.filledAtChange(job.status, status),
       },
       include: {
         club: true,
@@ -250,9 +285,47 @@ export class JobsService {
     });
   }
 
+  /**
+   * A club may delete a job once every application was answered, or once it has
+   * been FILLED for FILLED_DELETE_COOLDOWN_DAYS. SUPERADMIN skips the rules (moderation).
+   */
   async delete(id: string, actor: JobActor) {
-    await this.assertCanManageJob(id, actor);
-    await this.prisma.jobOpportunity.delete({ where: { id } });
+    const job = await this.assertCanManageJob(id, actor);
+
+    if (actor.role === "SUPERADMIN") {
+      await this.prisma.jobOpportunity.delete({ where: { id } });
+      return true;
+    }
+
+    const now = new Date();
+    const unansweredCount = await this.prisma.jobApplication.count({
+      where: { jobOpportunityId: id, status: { in: [...UNANSWERED_APPLICATION_STATUSES] } },
+    });
+    const decision = evaluateJobDeletion({
+      status: job.status,
+      filledAt: job.filledAt ?? null,
+      unansweredCount,
+      now,
+    });
+    if (decision.allowed === false) {
+      throw decision.reason === "FILLED_COOLDOWN"
+        ? AppError.jobFilledCooldown(decision.availableAt)
+        : AppError.jobHasUnansweredApplications();
+    }
+
+    // The same rule inside the DELETE closes the window where an application
+    // lands between the check above and the delete.
+    const cooldownStart = new Date(now.getTime() - FILLED_DELETE_COOLDOWN_DAYS * DAY_MS);
+    const { count } = await this.prisma.jobOpportunity.deleteMany({
+      where: {
+        id,
+        OR: [
+          { applications: { none: { status: { in: [...UNANSWERED_APPLICATION_STATUSES] } } } },
+          { status: "FILLED", filledAt: { lte: cooldownStart } },
+        ],
+      },
+    });
+    if (count === 0) throw AppError.jobHasUnansweredApplications();
     return true;
   }
 
