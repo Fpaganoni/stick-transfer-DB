@@ -462,6 +462,7 @@ el SDL, no es privado y llega en `club(id)` y en `updateClub`.
 
 ### Para el FRONT
 - Leer `verificationStatus` de `club(id)` (el club de la cuenta CLUB es su propio `User.id`) y deshabilitar "Publicar" y "Reabrir"
-  cuando no sea `VERIFIED`, con un enlace a `/profile/edit`, donde se envia el documento (`requestClubVerification`).
+  cuando no sea `VERIFIED`, con un enlace a `/profile`, donde el banner de verificacion abre el modal que envia el documento
+  (`requestClubVerification`).
 - Aun asi mapear `CLUB_NOT_VERIFIED` a un mensaje: el back es la fuente de verdad (el estado puede cambiar entre la lectura y el envio).
 - Los creditos de pago (5 EUR por 5 vacantes) no estan implementados; el tope sigue siendo `MAX_ACTIVE_JOBS = 5` abiertas a la vez.
