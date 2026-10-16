@@ -1,4 +1,30 @@
-import { isE2eAccountEmail } from "./e2e-accounts";
+import { databaseHost, isE2eAccountEmail, isLocalDatabaseHost } from "./e2e-accounts";
+
+describe("databaseHost", () => {
+  it("reads the host of a postgres url without exposing credentials", () => {
+    expect(databaseHost("postgresql://user:secret@db.example.com:5432/app?schema=public")).toBe(
+      "db.example.com",
+    );
+  });
+
+  it("is empty for a missing or malformed url", () => {
+    expect(databaseHost(undefined)).toBe("");
+    expect(databaseHost("not a url")).toBe("");
+  });
+});
+
+describe("isLocalDatabaseHost", () => {
+  it.each(["localhost", "127.0.0.1", "::1", "[::1]"])("treats %s as local", (host) => {
+    expect(isLocalDatabaseHost(host)).toBe(true);
+  });
+
+  it.each(["db.example.com", "10.0.0.5", "localhost.evil.com", "", "prod-localhost"])(
+    "does not treat %s as local",
+    (host) => {
+      expect(isLocalDatabaseHost(host)).toBe(false);
+    },
+  );
+});
 
 describe("isE2eAccountEmail", () => {
   it.each([

@@ -2,14 +2,18 @@
  * Deletes the accounts left behind by the front e2e suite (e2e-club-*, e2e-visitor-*).
  *
  *   pnpm prisma:cleanup-e2e            dry run: lists what would be deleted
- *   pnpm prisma:cleanup-e2e --apply    deletes them
+ *   pnpm prisma:cleanup-e2e --apply    deletes them (local database only)
+ *   pnpm prisma:cleanup-e2e --apply --allow-remote   same, on a remote dev database
+ *
+ * It prints the database host first and refuses to delete on a non-local host without
+ * --allow-remote, so a .env pointing at the wrong database cannot be wiped by accident.
  *
  * The club account cannot be deleted from the app, so each e2e run leaves one behind.
  * Deleting the User cascades to its Club, vacancies, applications, follows and messages.
  * It does NOT delete the crest the suite uploaded to Cloudinary.
  */
 import { PrismaClient } from "@prisma/client";
-import { isE2eAccountEmail } from "../../src/common/e2e-accounts";
+import { databaseHost, isE2eAccountEmail, isLocalDatabaseHost } from "../../src/common/e2e-accounts";
 
 const prisma = new PrismaClient();
 
@@ -18,6 +22,15 @@ async function main() {
     throw new Error("Refusing to run with NODE_ENV=production");
   }
   const apply = process.argv.includes("--apply");
+  const host = databaseHost(process.env.DATABASE_URL);
+  console.log(`database host: ${host || "(unknown)"}`);
+  // NODE_ENV is not enough: Prisma reads DATABASE_URL from .env whatever it says
+  if (apply && !isLocalDatabaseHost(host) && !process.argv.includes("--allow-remote")) {
+    throw new Error(
+      `Refusing to delete on a non-local database (${host || "unknown host"}). ` +
+        "If this really is the dev database, run again with --apply --allow-remote.",
+    );
+  }
 
   const candidates = await prisma.user.findMany({
     where: { email: { startsWith: "e2e-", endsWith: "@hockey-test.com" } },
