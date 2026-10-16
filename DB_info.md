@@ -441,3 +441,27 @@ Migracion `20261015130000_job_filled_at`: columna `JobOpportunity.filledAt` (`TI
 ### Para el FRONT
 - Calcular `canDelete` con la misma regla (`lib/job-deletion-rules.ts`) usando `status`, `filledAt` y el conteo de postulaciones
   sin responder; el back es la fuente de verdad: igual hay que mapear los dos codes a un mensaje.
+
+## Publicar vacantes exige club verificado (fase 5)
+
+Sin migracion ni campos nuevos: se usa `Club.verificationStatus` (`UNVERIFIED | PENDING | VERIFIED | REJECTED`), que ya estaba en
+el SDL, no es privado y llega en `club(id)` y en `updateClub`.
+
+### Reglas
+- `createJobOpportunity` y `updateJobOpportunity(status: OPEN)` sobre una vacante que no estaba `OPEN` (reabrir) solo funcionan si
+  el club es `VERIFIED`. `PENDING` (documento enviado, sin aprobar) **no** alcanza; tampoco `REJECTED` ni `UNVERIFIED`.
+- Se comprueba **antes** del tope de 5 vacantes abiertas: un club sin verificar recibe `CLUB_NOT_VERIFIED`, no `ACTIVE_JOBS_LIMIT_REACHED`.
+- No se pide verificacion para cerrar, marcar `FILLED`, borrar ni para vacantes que ya estan `OPEN`. Las vacantes abiertas de un club
+  que aun no esta verificado siguen abiertas.
+- SUPERADMIN puede reabrir (moderacion) aunque el club no este verificado. Crear sigue siendo solo del rol `CLUB`.
+
+### Error nuevo
+| Code | HTTP | Cuando |
+|------|------|--------|
+| `CLUB_NOT_VERIFIED` | 403 | El club no esta `VERIFIED` al crear o reabrir una vacante. Sin `field` |
+
+### Para el FRONT
+- Leer `verificationStatus` de `club(id)` (el club de la cuenta CLUB es su propio `User.id`) y deshabilitar "Publicar" y "Reabrir"
+  cuando no sea `VERIFIED`, con un enlace a `/profile/edit`, donde se envia el documento (`requestClubVerification`).
+- Aun asi mapear `CLUB_NOT_VERIFIED` a un mensaje: el back es la fuente de verdad (el estado puede cambiar entre la lectura y el envio).
+- Los creditos de pago (5 EUR por 5 vacantes) no estan implementados; el tope sigue siendo `MAX_ACTIVE_JOBS = 5` abiertas a la vez.
