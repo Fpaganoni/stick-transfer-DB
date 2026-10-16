@@ -60,6 +60,108 @@ describe("JobsService", () => {
     service = module.get<JobsService>(JobsService);
     prisma = module.get(PrismaService);
     jest.clearAllMocks();
+    // Publishing and reopening need a VERIFIED club; the tests that cover the refusals override this
+    prisma.club.findUnique.mockResolvedValue({ verificationStatus: "VERIFIED" });
+  });
+
+  // ── publishing needs a verified club ───────────────────────────────────────
+  describe("publishing requires a verified club", () => {
+    const input = {
+      title: "t", description: "d", positionType: "PLAYER", level: "PROFESSIONAL",
+      clubId: "club-1", country: "ES", city: "Barcelona",
+    };
+    const reopen = (actor = { userId: "club-1", role: "CLUB" }) =>
+      service.update("job-1", { status: "OPEN" }, actor);
+
+    beforeEach(() => {
+      prisma.jobOpportunity.count.mockResolvedValue(0);
+      prisma.jobOpportunity.create.mockResolvedValue({ id: "job-new" });
+      prisma.jobOpportunity.update.mockResolvedValue({});
+      prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1", status: "CLOSED", filledAt: null });
+    });
+
+    it.each(["UNVERIFIED", "PENDING", "REJECTED"])(
+      "refuses to create a vacancy while the club is %s, with the stable CLUB_NOT_VERIFIED code (403)",
+      async (verificationStatus) => {
+        prisma.club.findUnique.mockResolvedValue({ verificationStatus });
+
+        await expect(service.create(input)).rejects.toMatchObject({
+          code: "CLUB_NOT_VERIFIED",
+          status: 403,
+        });
+        expect(prisma.jobOpportunity.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it("refuses to create a vacancy when the club row does not exist", async () => {
+      prisma.club.findUnique.mockResolvedValue(null);
+
+      await expect(service.create(input)).rejects.toMatchObject({ code: "CLUB_NOT_VERIFIED" });
+      expect(prisma.jobOpportunity.create).not.toHaveBeenCalled();
+    });
+
+    it("creates the vacancy once the club is VERIFIED", async () => {
+      await service.create(input);
+
+      expect(prisma.club.findUnique).toHaveBeenCalledWith({
+        where: { id: "club-1" },
+        select: { verificationStatus: true },
+      });
+      expect(prisma.jobOpportunity.create).toHaveBeenCalled();
+    });
+
+    it.each(["UNVERIFIED", "PENDING", "REJECTED"])(
+      "refuses to reopen a vacancy while the club is %s",
+      async (verificationStatus) => {
+        prisma.club.findUnique.mockResolvedValue({ verificationStatus });
+
+        await expect(reopen()).rejects.toMatchObject({ code: "CLUB_NOT_VERIFIED", status: 403 });
+        expect(prisma.jobOpportunity.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it("lets a verified club reopen a vacancy", async () => {
+      await reopen();
+
+      expect(prisma.jobOpportunity.update).toHaveBeenCalled();
+    });
+
+    it("lets SUPERADMIN reopen a vacancy of a club that is not verified (moderation)", async () => {
+      prisma.club.findUnique.mockResolvedValue({ verificationStatus: "UNVERIFIED" });
+
+      await reopen({ userId: "admin-1", role: "SUPERADMIN" });
+
+      expect(prisma.jobOpportunity.update).toHaveBeenCalled();
+    });
+
+    it.each(["CLOSED", "FILLED"])(
+      "never asks for verification when closing or filling (%s): an unverified club can still tidy up",
+      async (status) => {
+        prisma.club.findUnique.mockResolvedValue({ verificationStatus: "UNVERIFIED" });
+        prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1", status: "OPEN", filledAt: null });
+
+        await service.update("job-1", { status }, { userId: "club-1", role: "CLUB" });
+
+        expect(prisma.club.findUnique).not.toHaveBeenCalled();
+        expect(prisma.jobOpportunity.update).toHaveBeenCalled();
+      },
+    );
+
+    it("does not ask for verification when the vacancy is already open", async () => {
+      prisma.club.findUnique.mockResolvedValue({ verificationStatus: "UNVERIFIED" });
+      prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1", status: "OPEN", filledAt: null });
+
+      await reopen();
+
+      expect(prisma.club.findUnique).not.toHaveBeenCalled();
+    });
+
+    it("checks verification before the active vacancies cap", async () => {
+      prisma.club.findUnique.mockResolvedValue({ verificationStatus: "UNVERIFIED" });
+      prisma.jobOpportunity.count.mockResolvedValue(5);
+
+      await expect(service.create(input)).rejects.toMatchObject({ code: "CLUB_NOT_VERIFIED" });
+    });
   });
 
   // ── findAll ───────────────────────────────────────────────────────────────

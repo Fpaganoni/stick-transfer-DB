@@ -13,6 +13,7 @@ export type AppErrorCode =
   | "JOB_FILLED_COOLDOWN"
   | "ROLE_CHANGE_NOT_ALLOWED"
   | "ACTIVE_JOBS_LIMIT_REACHED"
+  | "CLUB_NOT_VERIFIED"
   | "INVALID_CREDENTIALS"
   | "RATE_LIMITED"
   | "INTERNAL_ERROR";
@@ -108,6 +109,15 @@ export class AppError extends HttpException {
     return new AppError(
       "ACTIVE_JOBS_LIMIT_REACHED",
       `Your club has reached the limit of ${max} active job opportunities`,
+      HttpStatus.FORBIDDEN,
+    );
+  }
+
+  /** Only a VERIFIED club may publish or reopen a vacancy (PENDING is not enough). */
+  static clubNotVerified() {
+    return new AppError(
+      "CLUB_NOT_VERIFIED",
+      "Your club must be verified to publish job opportunities",
       HttpStatus.FORBIDDEN,
     );
   }

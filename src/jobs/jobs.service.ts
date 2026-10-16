@@ -244,6 +244,7 @@ export class JobsService {
       : undefined;
     const modality = data.modality ? this.parseModality(data.modality) : undefined;
 
+    await this.assertClubVerified(data.clubId);
     await this.assertBelowActiveJobsLimit(data.clubId);
 
     return this.prisma.jobOpportunity.create({
@@ -266,6 +267,15 @@ export class JobsService {
     });
   }
 
+  /** Publishing (create or reopen) needs a VERIFIED club; PENDING, REJECTED and UNVERIFIED are refused. */
+  private async assertClubVerified(clubId: string) {
+    const club = await this.prisma.club.findUnique({
+      where: { id: clubId },
+      select: { verificationStatus: true },
+    });
+    if (club?.verificationStatus !== "VERIFIED") throw AppError.clubNotVerified();
+  }
+
   /** A club keeps at most MAX_ACTIVE_JOBS vacancies OPEN, whether it creates or reopens one. */
   private async assertBelowActiveJobsLimit(clubId: string, excludingJobId?: string) {
     const activeJobsCount = await this.prisma.jobOpportunity.count({
@@ -285,6 +295,8 @@ export class JobsService {
     const status = data.status == null ? undefined : this.parseJobStatus(data.status);
     // Reopening counts like creating: otherwise close + create + reopen exceeds the cap
     if (status === "OPEN" && job.status !== "OPEN") {
+      // SUPERADMIN moderates: it may reopen on behalf of a club that is not verified
+      if (actor.role !== "SUPERADMIN") await this.assertClubVerified(job.clubId);
       await this.assertBelowActiveJobsLimit(job.clubId, id);
     }
     return this.prisma.jobOpportunity.update({
