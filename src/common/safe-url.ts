@@ -62,6 +62,32 @@ export function checkCloudinaryDocumentUrl(field: string, value: string): FieldE
       };
 }
 
+/**
+ * A document that lives directly in `ownerFolder` (e.g. "stick-transfer/clubs/<id>"):
+ * the same checks as checkCloudinaryDocumentUrl plus the owner's folder, so one
+ * account cannot present a file uploaded by another as its own proof.
+ */
+export function checkOwnedCloudinaryDocumentUrl(
+  field: string,
+  value: string,
+  ownerFolder: string,
+): FieldError | null {
+  const base = checkCloudinaryDocumentUrl(field, value);
+  if (base) return base;
+
+  const escapedFolder = ownerFolder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const owned = new RegExp(`/(?:image|raw)/upload/(?:v\\d+/)?${escapedFolder}/[^/]+$`).test(
+    new URL(value).pathname,
+  );
+  return owned
+    ? null
+    : {
+        field,
+        code: "DOCUMENT_URL_INVALID",
+        message: `${field} must be a document uploaded to your own folder`,
+      };
+}
+
 export function checkPhone(field: string, value: string): FieldError | null {
   return PHONE_PATTERN.test(value.trim())
     ? null

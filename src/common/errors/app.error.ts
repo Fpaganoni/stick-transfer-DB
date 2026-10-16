@@ -12,6 +12,7 @@ export type AppErrorCode =
   | "JOB_HAS_UNANSWERED_APPLICATIONS"
   | "JOB_FILLED_COOLDOWN"
   | "ROLE_CHANGE_NOT_ALLOWED"
+  | "ACTIVE_JOBS_LIMIT_REACHED"
   | "INVALID_CREDENTIALS"
   | "RATE_LIMITED"
   | "INTERNAL_ERROR";
@@ -99,6 +100,15 @@ export class AppError extends HttpException {
       "ROLE_CHANGE_NOT_ALLOWED",
       "Roles cannot be changed to or from CLUB",
       HttpStatus.BAD_REQUEST,
+    );
+  }
+
+  /** A club keeps at most `max` vacancies OPEN, when it creates or reopens one. */
+  static activeJobsLimitReached(max: number) {
+    return new AppError(
+      "ACTIVE_JOBS_LIMIT_REACHED",
+      `Your club has reached the limit of ${max} active job opportunities`,
+      HttpStatus.FORBIDDEN,
     );
   }
 

@@ -442,10 +442,22 @@ describe("ClubsService", () => {
       expect(prisma.club.update).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ["another club's folder", "https://res.cloudinary.com/demo/raw/upload/v1/stick-transfer/clubs/club-2/verification-doc.pdf"],
+      ["a person's folder", "https://res.cloudinary.com/demo/raw/upload/v1/stick-transfer/users/club-1/cv.pdf"],
+      ["a file outside the app folders", "https://res.cloudinary.com/demo/raw/upload/v1/doc.pdf"],
+      ["a nested path under the club folder", "https://res.cloudinary.com/demo/raw/upload/v1/stick-transfer/clubs/club-1/x/y.pdf"],
+    ])("rejects a document from %s: a club can only present its own", async (_label, documentUrl) => {
+      await expect(service.requestVerification("club-1", documentUrl)).rejects.toMatchObject({
+        fields: [expect.objectContaining({ field: "documentUrl", code: "DOCUMENT_URL_INVALID" })],
+      });
+      expect(prisma.club.update).not.toHaveBeenCalled();
+    });
+
     it("stores a Cloudinary document", async () => {
       prisma.club.findUnique.mockResolvedValue({ id: "club-1", isVerified: false, verificationStatus: "NONE" });
       prisma.club.update.mockResolvedValue({ id: "club-1" });
-      const url = "https://res.cloudinary.com/demo/raw/upload/v1/doc.pdf";
+      const url = "https://res.cloudinary.com/demo/raw/upload/v1/stick-transfer/clubs/club-1/verification-doc.pdf";
 
       await service.requestVerification("club-1", url);
 

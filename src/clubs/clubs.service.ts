@@ -7,13 +7,13 @@ import {
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { Club, NotificationType, Prisma, User, VerificationStatus } from "@prisma/client";
 import { PrismaService } from "../prisma.service";
-import { resolveOwnedImages } from "../uploads/image-url";
+import { ownerImageFolder, resolveOwnedImages } from "../uploads/image-url";
 import { AppError, FieldError } from "../common/errors/app.error";
 import { checkCountry, normalizeCountry } from "../common/geo/countries";
 import { normalizeOffsetPagination } from "../common/pagination";
 import { BatchLoader, createBatchLoader } from "../common/batch-loader";
 import {
-  checkCloudinaryDocumentUrl,
+  checkOwnedCloudinaryDocumentUrl,
   checkPhone,
   checkPublicHttpUrl,
   throwIfInvalid,
@@ -572,7 +572,10 @@ export class ClubsService {
   }
 
   async requestVerification(clubId: string, documentUrl: string) {
-    throwIfInvalid([checkCloudinaryDocumentUrl("documentUrl", documentUrl)]);
+    // A club can only present a document from its own folder, never another club's
+    throwIfInvalid([
+      checkOwnedCloudinaryDocumentUrl("documentUrl", documentUrl, ownerImageFolder("clubs", clubId)),
+    ]);
     const club = await this.prisma.club.findUnique({ where: { id: clubId } });
     if (!club) throw new BadRequestException(`Club ${clubId} not found`);
     if (club.isVerified) throw new BadRequestException(`Club is already verified`);

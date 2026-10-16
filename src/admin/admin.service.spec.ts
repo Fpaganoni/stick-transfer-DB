@@ -207,11 +207,25 @@ describe("AdminService", () => {
 
       const result = await service.changeUserRole("user-1", "COACH" as any);
 
+      // The role travels in the JWT: bumping tokenVersion kills the sessions that
+      // still carry the old one (a demoted SUPERADMIN must not keep admin powers)
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: "user-1" },
+        data: { role: "COACH", tokenVersion: { increment: 1 } },
+      });
+      expect(result).toEqual({ id: "user-1", role: "COACH" });
+    });
+
+    it("does not log the user out when the role does not change", async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: "COACH" });
+      prisma.user.update.mockResolvedValue({ id: "user-1", role: "COACH" });
+
+      await service.changeUserRole("user-1", "COACH" as any);
+
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: "user-1" },
         data: { role: "COACH" },
       });
-      expect(result).toEqual({ id: "user-1", role: "COACH" });
     });
 
     it("rejects a role change to CLUB: a club needs its Club row, name key and location", async () => {

@@ -18,9 +18,11 @@ export class AdminService {
     if (current.role !== role && (current.role === "CLUB" || role === "CLUB")) {
       throw AppError.roleChangeNotAllowed();
     }
+    // The role is read from the JWT: a real change bumps tokenVersion so the sessions
+    // that still carry the old role (e.g. a demoted SUPERADMIN) stop working at once.
     return this.prisma.user.update({
       where: { id: userId },
-      data: { role },
+      data: current.role === role ? { role } : { role, tokenVersion: { increment: 1 } },
     });
   }
 

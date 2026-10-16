@@ -334,7 +334,13 @@ con un assert: falla si dos clubes comparten `clubNameKey` o si algun CLUB no ti
 - `NAME_INVALID` (400, `VALIDATION_ERROR`, `field: "name" | "clubName" | "managedByFirstName" | "managedByLastName"`): el
   nombre trae caracteres de control o invisibles. `NAME_TOO_LONG` tambien aplica a `managedBy*` (maximo 100).
 - `adminChangeUserRole` a o desde CLUB -> 400 `Roles cannot be changed to or from CLUB`, con `extensions.code: "ROLE_CHANGE_NOT_ALLOWED"`
-  (codigo estable: el front mapea el codigo, no el texto).
+  (codigo estable: el front mapea el codigo, no el texto). Un cambio de rol real sube `tokenVersion` del usuario: sus sesiones
+  vigentes dejan de valer (el JWT lleva el rol). Reasignar el mismo rol no revoca nada.
+- `updateJobOpportunity(status: OPEN)` sobre una vacante CLOSED/FILLED con el club ya en 5 vacantes OPEN -> 403
+  `ACTIVE_JOBS_LIMIT_REACHED` (mismo tope que `createJobOpportunity`; la propia vacante no cuenta). El front lo muestra como
+  "ya tenes 5 vacantes abiertas" y deja la vacante como estaba.
+- `requestClubVerification(documentUrl:)` solo acepta un documento subido a la carpeta Cloudinary del propio club; si no ->
+  `VALIDATION_ERROR` con `field: "documentUrl"`, `code: "DOCUMENT_URL_INVALID"`.
 - Ya existentes que ahora tambien salen de `updateClub`: `USERNAME_TAKEN` (409, `field: "username"`), `IMAGE_URL_INVALID`
   (`field: "logo" | "coverImage"`), `COUNTRY_INVALID`, `FIELD_REQUIRED` (`field: "city"`).
 

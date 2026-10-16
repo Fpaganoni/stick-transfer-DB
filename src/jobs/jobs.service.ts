@@ -22,6 +22,9 @@ import {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Vacancies a club may keep OPEN at once. */
+const MAX_ACTIVE_JOBS = 5;
+
 export type JobActor = { userId: string; role: string };
 
 export const POSITION_TYPES = ["PLAYER", "COACH", "STAFF", "UMPIRE", "OTHER"];
@@ -241,14 +244,7 @@ export class JobsService {
       : undefined;
     const modality = data.modality ? this.parseModality(data.modality) : undefined;
 
-    const activeJobsCount = await this.prisma.jobOpportunity.count({
-      where: { clubId: data.clubId, status: "OPEN" },
-    });
-    if (activeJobsCount >= 5) {
-      throw new ForbiddenException(
-        "Your club has reached the limit of 5 active job opportunities",
-      );
-    }
+    await this.assertBelowActiveJobsLimit(data.clubId);
 
     return this.prisma.jobOpportunity.create({
       data: {
@@ -270,9 +266,27 @@ export class JobsService {
     });
   }
 
+  /** A club keeps at most MAX_ACTIVE_JOBS vacancies OPEN, whether it creates or reopens one. */
+  private async assertBelowActiveJobsLimit(clubId: string, excludingJobId?: string) {
+    const activeJobsCount = await this.prisma.jobOpportunity.count({
+      where: {
+        clubId,
+        status: "OPEN",
+        ...(excludingJobId ? { id: { not: excludingJobId } } : {}),
+      },
+    });
+    if (activeJobsCount >= MAX_ACTIVE_JOBS) {
+      throw AppError.activeJobsLimitReached(MAX_ACTIVE_JOBS);
+    }
+  }
+
   async update(id: string, data: { status?: string | null }, actor: JobActor) {
     const job = await this.assertCanManageJob(id, actor);
     const status = data.status == null ? undefined : this.parseJobStatus(data.status);
+    // Reopening counts like creating: otherwise close + create + reopen exceeds the cap
+    if (status === "OPEN" && job.status !== "OPEN") {
+      await this.assertBelowActiveJobsLimit(job.clubId, id);
+    }
     return this.prisma.jobOpportunity.update({
       where: { id },
       data: {

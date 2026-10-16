@@ -395,6 +395,7 @@ describe("JobsService", () => {
 
     it("should clear filledAt when a FILLED job is reopened", async () => {
       prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1", status: "FILLED", filledAt: new Date() });
+      prisma.jobOpportunity.count.mockResolvedValue(0); // reopening counts the club's open jobs
       prisma.jobOpportunity.update.mockResolvedValue({});
       await service.update("job-1", { status: "OPEN" }, { userId: "club-1", role: "CLUB" });
       expect(prisma.jobOpportunity.update).toHaveBeenCalledWith(
@@ -409,6 +410,61 @@ describe("JobsService", () => {
       expect(prisma.jobOpportunity.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { status: "FILLED" } }),
       );
+    });
+
+    describe("reopening and the limit of 5 active job opportunities", () => {
+      const club = { userId: "club-1", role: "CLUB" };
+
+      it.each(["CLOSED", "FILLED"])("refuses to reopen a %s job when 5 others are open", async (status) => {
+        prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1", status, filledAt: null });
+        prisma.jobOpportunity.count.mockResolvedValue(5);
+
+        await expect(service.update("job-1", { status: "OPEN" }, club)).rejects.toThrow(
+          "Your club has reached the limit of 5 active job opportunities",
+        );
+        expect(prisma.jobOpportunity.update).not.toHaveBeenCalled();
+      });
+
+      it("refuses with the stable ACTIVE_JOBS_LIMIT_REACHED code (403) for the front", async () => {
+        prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1", status: "CLOSED", filledAt: null });
+        prisma.jobOpportunity.count.mockResolvedValue(5);
+
+        await expect(service.update("job-1", { status: "OPEN" }, club)).rejects.toMatchObject({
+          code: "ACTIVE_JOBS_LIMIT_REACHED",
+          status: 403,
+        });
+      });
+
+      it("counts the other open jobs of the same club, not the job being reopened", async () => {
+        prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1", status: "CLOSED", filledAt: null });
+        prisma.jobOpportunity.count.mockResolvedValue(4);
+        prisma.jobOpportunity.update.mockResolvedValue({});
+
+        await service.update("job-1", { status: "OPEN" }, club);
+
+        expect(prisma.jobOpportunity.count).toHaveBeenCalledWith({
+          where: { clubId: "club-1", status: "OPEN", id: { not: "job-1" } },
+        });
+        expect(prisma.jobOpportunity.update).toHaveBeenCalled();
+      });
+
+      it("does not count when the job is already open", async () => {
+        prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1", status: "OPEN", filledAt: null });
+        prisma.jobOpportunity.update.mockResolvedValue({});
+
+        await service.update("job-1", { status: "OPEN" }, club);
+
+        expect(prisma.jobOpportunity.count).not.toHaveBeenCalled();
+      });
+
+      it.each(["CLOSED", "FILLED"])("does not count when closing or filling (%s)", async (status) => {
+        prisma.jobOpportunity.findUnique.mockResolvedValue({ id: "job-1", clubId: "club-1", status: "OPEN", filledAt: null });
+        prisma.jobOpportunity.update.mockResolvedValue({});
+
+        await service.update("job-1", { status }, club);
+
+        expect(prisma.jobOpportunity.count).not.toHaveBeenCalled();
+      });
     });
   });
 
