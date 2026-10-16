@@ -11,6 +11,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:seed": "ts-node prisma/seed.ts",
+    "prisma:cleanup-e2e": "ts-node prisma/scripts/cleanup-e2e-accounts.ts",
     "prisma:reset": "prisma migrate reset --force",
     "lint": "eslint . --ext .ts",
     "test": "jest",
